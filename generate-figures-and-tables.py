@@ -38,18 +38,24 @@ initialize_matplotlib()
 
 
 DATA_DIR = "raw-data"
+OUTPUT_DIR = "out"
 
 
 def open_data_file(filename, **kwargs):
     return open(os.path.join(DATA_DIR, filename), "r", **kwargs)
 
 
+def open_output_file(filename, **kwargs):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    return open(os.path.join(OUTPUT_DIR, filename), "w", **kwargs)
+
+
 # {{{ utils
 
-def print_table(table, headers, outf, column_formats=None):
+def print_table(table, headers, outf_name, column_formats=None):
     if column_formats is None:
         column_formats = "c" * len(headers)
-    with open(outf, "w") as outfile:
+    with open_output_file(outf_name) as outfile:
         def my_print(s):
             print(s, file=outfile)
         my_print(r"\begin{tabular}{%s}" % column_formats)
@@ -60,7 +66,7 @@ def print_table(table, headers, outf, column_formats=None):
             my_print(" & ".join(row) + r"\\")
         my_print(r"\bottomrule")
         my_print(r"\end{tabular}")
-    print(f"Output written to {outf}.")
+    print(f"Wrote output {outf_name}")
 
 
 def fmt(val):
@@ -91,7 +97,7 @@ def generate_green_error_table(infile, scheme_name):
     qbx_orders = set()
 
     reader = csv.DictReader(infile)
-    
+
     for row in reader:
         fmm_order = row["fmm_order"]
         if fmm_order != "inf":
@@ -104,8 +110,6 @@ def generate_green_error_table(infile, scheme_name):
 
         results_l2[fmm_order, qbx_order] = float(row["err_l2"])
         results_linf[fmm_order, qbx_order] = float(row["err_linf"])
-
-    print("l2 results", results_l2)
 
     fmm_orders = sorted(fmm_orders, key=lambda order: -1 if order == "inf" else order)
     qbx_orders = sorted(qbx_orders)
@@ -184,10 +188,10 @@ def generate_green_error_table(infile, scheme_name):
 
 
 def main():
-    with open("raw-data/green-error-results-gigaqbx.csv", "r", newline="") as infile:
+    with open_data_file("green-error-results-gigaqbx.csv", "r", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")
-        
-    with open("raw-data/green-error-results-qbxfmm.csv", "r", newline="") as infile:
+
+    with open_data_file("green-error-results-qbxfmm.csv", "r", newline="") as infile:
         generate_green_error_table(infile, scheme_name="qbxfmm")
 
     # run_bvp_error_experiment(use_gigaqbx_fmm=True)
@@ -195,7 +199,7 @@ def main():
     # run(run_complexity_experiment, use_gigaqbx_fmm=True, compute_wall_times=False)
     # run(run_complexity_experiment, use_gigaqbx_fmm=False)
     # run(run_from_sep_smaller_threshold_complexity_experiment)
-    
+
     # run(run_wall_time_experiment, use_gigaqbx_fmm=True)
     # run(run_wall_time_experiment, use_gigaqbx_fmm=False)
     # run(run_level_restriction_experiment)
