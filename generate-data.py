@@ -54,9 +54,17 @@ POOL_WORKERS = multiprocessing.cpu_count() + 1
 # {{{ green error experiment params
 
 GREEN_ERROR_EXPERIMENT_N_ARMS = 65
-GREEN_ERROR_EXPERIMENT_FMM_ORDERS = [6, 8] #["inf", 3, 5, 10, 15, 20]
-GREEN_ERROR_EXPERIMENT_QBX_ORDERS = [2, 4] #[3, 5, 7, 9]
-GREEN_ERROR_EXPERIMENT_K = 0
+GREEN_ERROR_EXPERIMENT_FMM_ORDERS = ["inf", 3, 5, 10, 15, 20]
+GREEN_ERROR_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
+
+# }}}
+
+
+# {{{ bvp error experiment params
+
+BVP_ERROR_EXPERIMENT_N_ARMS = 25
+BVP_ERROR_EXPERIMENT_FMM_ORDERS = [3, 5, 10, 15, 20]
+BVP_ERROR_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
 
 # }}}
 
@@ -253,21 +261,18 @@ GREEN_ERROR_FIELDS = ["fmm_order", "qbx_order", "err_l2", "err_linf"]
 FLOAT_OUTPUT_FMT = "%.17e"
 
 
-def run_green_error_experiment(use_gigaqbx_fmm):
-    k = GREEN_ERROR_EXPERIMENT_K
-    fmm_orders = GREEN_ERROR_EXPERIMENT_FMM_ORDERS
-    qbx_orders = GREEN_ERROR_EXPERIMENT_QBX_ORDERS
-
+def run_green_error_experiment(use_gigaqbx_fmm, n_arms, fmm_orders, qbx_orders):
     from itertools import product
     order_pairs = list(product(fmm_orders, qbx_orders))
 
     with multiprocessing.Pool(POOL_WORKERS) as pool:
         results = pool.map(
-                partial(_green_error_experiment_body, use_gigaqbx_fmm, k),
+                partial(_green_error_experiment_body, use_gigaqbx_fmm, n_arms),
                 order_pairs)
 
-    output_path = "green-error-results-%s.csv" % (
-            "gigaqbx" if use_gigaqbx_fmm else "qbxfmm")
+    output_path = "green-error-results-%s-%d.csv" % (
+            "gigaqbx" if use_gigaqbx_fmm else "qbxfmm",
+            n_arms)
 
     with make_output_file(output_path, newline="") as outfile:
         writer = csv.DictWriter(outfile, GREEN_ERROR_FIELDS)
@@ -281,7 +286,7 @@ def run_green_error_experiment(use_gigaqbx_fmm):
             writer.writerow(row)
 
 
-def _green_error_experiment_body(use_gigaqbx_fmm, k, fmm_and_qbx_order_pair):
+def _green_error_experiment_body(use_gigaqbx_fmm, n_arms, fmm_and_qbx_order_pair):
     # This returns a tuple (err_l2, err_linf).
     cl_ctx = cl.create_some_context(interactive=False)
 
@@ -292,12 +297,12 @@ def _green_error_experiment_body(use_gigaqbx_fmm, k, fmm_and_qbx_order_pair):
         # GIGAQBX + fmmlib appears to be the most reliable fast
         # eval option.
         lpot_source = get_geometry(cl_ctx,
-                                   GREEN_ERROR_EXPERIMENT_N_ARMS,
+                                   n_arms,
                                    use_gigaqbx_fmm=True,
                                    fmm_backend="fmmlib")
     else:
         lpot_source = get_geometry(cl_ctx,
-                                   GREEN_ERROR_EXPERIMENT_N_ARMS,
+                                   n_arms,
                                    use_gigaqbx_fmm=use_gigaqbx_fmm)
 
     print("#" * 80)
@@ -305,7 +310,7 @@ def _green_error_experiment_body(use_gigaqbx_fmm, k, fmm_and_qbx_order_pair):
     print("#" * 80)
 
     true_fmm_order = 30 if fmm_order == "inf" else fmm_order
-    return get_green_error(lpot_source, true_fmm_order, qbx_order, k=k)
+    return get_green_error(lpot_source, true_fmm_order, qbx_order, k=0)
 
 # }}}
 
@@ -317,8 +322,28 @@ def main():
     multiprocessing.set_start_method("spawn")
 
     # Uncomment everything to gather all experiment data for the paper.
-    run_green_error_experiment(use_gigaqbx_fmm=True)
-    run_green_error_experiment(use_gigaqbx_fmm=False)
+    """
+    # Green error experiments.
+
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               n_arms=GREEN_ERROR_EXPERIMENT_N_ARMS,
+                               fmm_orders=GREEN_ERROR_EXPERIMENT_FMM_ORDERS,
+                               qbx_orders=GREEN_ERROR_EXPERIMENT_QBX_ORDERS)
+
+    run_green_error_experiment(use_gigaqbx_fmm=False,
+                               n_arms=GREEN_ERROR_EXPERIMENT_N_ARMS,
+                               fmm_orders=GREEN_ERROR_EXPERIMENT_FMM_ORDERS,
+                               qbx_orders=GREEN_ERROR_EXPERIMENT_QBX_ORDERS)
+    """
+
+    # BVP error experiment
+    
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               n_arms=BVP_ERROR_EXPERIMENT_N_ARMS,
+                               fmm_orders=BVP_ERROR_EXPERIMENT_FMM_ORDERS,
+                               qbx_orders=BVP_ERROR_EXPERIMENT_QBX_ORDERS)
+
+    run_bvp_error_experiment()
 
     # run_bvp_error_experiment(use_gigaqbx_fmm=True)
     # run_particle_distributions_experiment()

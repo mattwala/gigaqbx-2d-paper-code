@@ -188,10 +188,10 @@ def generate_green_error_table(infile, scheme_name):
 
 
 def main():
-    with open_data_file("green-error-results-gigaqbx.csv", "r", newline="") as infile:
+    with open_data_file("green-error-results-gigaqbx-65.csv", "r", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")
 
-    with open_data_file("green-error-results-qbxfmm.csv", "r", newline="") as infile:
+    with open_data_file("green-error-results-qbxfmm-65.csv", "r", newline="") as infile:
         generate_green_error_table(infile, scheme_name="qbxfmm")
 
     # run_bvp_error_experiment(use_gigaqbx_fmm=True)
