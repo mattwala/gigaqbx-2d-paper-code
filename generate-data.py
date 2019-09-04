@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import numpy as np
@@ -37,7 +36,6 @@ def make_output_file(filename, **flags):
 TARGET_ORDER = 8
 OVSMP_FACTOR = 4
 PANELS_PER_ARM = 50
-N_ARMS_FOR_BVP_EXPERIMENT = 25
 if 0:
     ARMS = [3, 4, 5]
 else:
@@ -47,6 +45,7 @@ DEFAULT_GIGAQBX_BACKEND = "fmmlib"
 DEFAULT_QBXFMM_BACKEND = "fmmlib"
 TIMING_ROUNDS = 3
 POOL_WORKERS = multiprocessing.cpu_count() + 1
+FLOAT_OUTPUT_FMT = "%.17e"
 
 # }}}
 
@@ -60,11 +59,11 @@ GREEN_ERROR_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
 # }}}
 
 
-# {{{ bvp error experiment params
+# {{{ bvp experiment params
 
-BVP_ERROR_EXPERIMENT_N_ARMS = 25
-BVP_ERROR_EXPERIMENT_FMM_ORDERS = [3, 5, 10, 15, 20]
-BVP_ERROR_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
+BVP_EXPERIMENT_N_ARMS = 25
+BVP_EXPERIMENT_FMM_ORDERS = [3, 5, 10, 15, 20]
+BVP_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
 
 # }}}
 
@@ -258,7 +257,6 @@ def get_green_error(lpot_source, fmm_order, qbx_order, k=0, time=None):
 # {{{ green error experiment
 
 GREEN_ERROR_FIELDS = ["fmm_order", "qbx_order", "err_l2", "err_linf"]
-FLOAT_OUTPUT_FMT = "%.17e"
 
 
 def run_green_error_experiment(use_gigaqbx_fmm, n_arms, fmm_orders, qbx_orders):
@@ -315,6 +313,168 @@ def _green_error_experiment_body(use_gigaqbx_fmm, n_arms, fmm_and_qbx_order_pair
 # }}}
 
 
+# {{{ bvp experiment
+
+def get_bvp_error(lpot_source, fmm_order, qbx_order, k=0, time=None):
+    # This returns a tuple (err_l2, err_linf, nit).
+    queue = cl.CommandQueue(lpot_source.cl_context)
+
+    lpot_source = lpot_source.copy(
+            qbx_order=qbx_order,
+            fmm_level_to_order=(
+                False if fmm_order is False else lambda *args: fmm_order))
+
+    d = lpot_source.ambient_dim
+
+    assert k == 0  # Helmholtz would require a different representation
+
+    from sumpy.kernel import LaplaceKernel, HelmholtzKernel
+    lap_k_sym = LaplaceKernel(d)
+    if k == 0:
+        k_sym = lap_k_sym
+        knl_kwargs = {}
+    else:
+        k_sym = HelmholtzKernel(d)
+        knl_kwargs = {"k": sym.var("k")}
+
+    density_discr = lpot_source.density_discr
+
+    # {{{ find source and target points
+
+    source_angles = (
+            np.pi/2 + np.linspace(
+                0, 2*np.pi * BVP_EXPERIMENT_N_ARMS,
+                BVP_EXPERIMENT_N_ARMS, endpoint=False)
+            ) / BVP_EXPERIMENT_N_ARMS
+    source_points = 0.75 * np.array([
+        np.cos(source_angles),
+        np.sin(source_angles),
+        ])
+    target_angles = (
+            np.pi + np.pi/2 + np.linspace(
+                0, 2*np.pi * BVP_EXPERIMENT_N_ARMS,
+                BVP_EXPERIMENT_N_ARMS, endpoint=False)
+            ) / BVP_EXPERIMENT_N_ARMS
+    target_points = 1.5 * np.array([
+        np.cos(target_angles),
+        np.sin(target_angles),
+        ])
+
+    np.random.seed(17)
+    source_charges = np.random.randn(BVP_EXPERIMENT_N_ARMS)
+
+    source_points_dev = cl.array.to_device(queue, source_points)
+    target_points_dev = cl.array.to_device(queue, target_points)
+    source_charges_dev = cl.array.to_device(queue, source_charges)
+
+    from pytential.source import PointPotentialSource
+    from pytential.target import PointsTarget
+
+    point_source = PointPotentialSource(
+            lpot_source.cl_context, source_points_dev)
+
+    pot_src = sym.IntG(
+        # FIXME: qbx_forced_limit--really?
+        k_sym, sym.var("charges"), qbx_forced_limit=None, **knl_kwargs)
+
+    ref_direct = bind(
+            (point_source, PointsTarget(target_points_dev)), pot_src)(
+            queue, charges=source_charges_dev, **knl_kwargs).get()
+
+    sym_sqrt_j = sym.sqrt_jac_q_weight(density_discr.ambient_dim)
+
+    bc = bind(
+            (point_source, density_discr),
+            sym.normal_derivative(
+                density_discr.ambient_dim, pot_src, where=sym.DEFAULT_TARGET)
+            )(queue, charges=source_charges_dev, **knl_kwargs)
+
+    rhs = bind(density_discr, sym.var("bc")*sym_sqrt_j)(queue, bc=bc)
+
+    # }}}
+
+    # {{{ solve
+
+    bound_op = bind(
+            lpot_source,
+            -0.5*sym.var("u")
+            + sym_sqrt_j*sym.Sp(
+                k_sym, sym.var("u")/sym_sqrt_j, qbx_forced_limit="avg",
+                **knl_kwargs))
+
+    from pytential.solve import gmres
+    gmres_result = gmres(
+            bound_op.scipy_op(queue, "u", np.float64, **knl_kwargs),
+            rhs,
+            tol=1e-10,
+            stall_iterations=100,
+            progress=True,
+            hard_failure=True)
+
+    u = gmres_result.solution
+
+    # }}}
+
+    points_target = PointsTarget(target_points_dev)
+    bound_tgt_op = bind(
+            (lpot_source, points_target),
+            sym.S(k_sym, sym.var("u")/sym_sqrt_j, qbx_forced_limit=None))
+
+    test_via_bdry = bound_tgt_op(queue, u=u).get()
+
+    err = ref_direct-test_via_bdry
+
+    err_l2 = la.norm(err, 2) / la.norm(ref_direct, 2)
+    err_linf = la.norm(err, np.inf) / la.norm(ref_direct, np.inf)
+    return err_l2, err_linf, gmres_result.iteration_count
+
+
+BVP_FIELDS = ["fmm_order", "qbx_order", "err_l2", "err_linf", "gmres_nit"]
+
+
+def run_bvp_experiment():
+    from itertools import product
+    fmm_orders = BVP_EXPERIMENT_FMM_ORDERS
+    qbx_orders = BVP_EXPERIMENT_QBX_ORDERS
+    
+    order_pairs = list(product(fmm_orders, qbx_orders))
+
+    with multiprocessing.Pool(POOL_WORKERS) as pool:
+        results = pool.map(
+                _bvp_experiment_body,
+                order_pairs)
+
+    output_path = "bvp-results.csv"
+
+    with make_output_file(output_path, newline="") as outfile:
+        writer = csv.DictWriter(outfile, BVP_FIELDS)
+        writer.writeheader()
+        for order_pair, result in zip(order_pairs, results):
+            row = dict(
+                    fmm_order=order_pair[0],
+                    qbx_order=order_pair[1],
+                    err_l2=FLOAT_OUTPUT_FMT % result[0],
+                    err_linf=FLOAT_OUTPUT_FMT % result[1],
+                    gmres_nit=result[2])
+            writer.writerow(row)
+
+
+def _bvp_experiment_body(fmm_and_qbx_order_pair):
+    # This returns a tuple (err_l2, err_linf, gmres_nit).
+    cl_ctx = cl.create_some_context(interactive=False)
+
+    fmm_order, qbx_order = fmm_and_qbx_order_pair
+    lpot_source = get_geometry(cl_ctx, BVP_EXPERIMENT_N_ARMS, use_gigaqbx_fmm=True)
+
+    print("#" * 80)
+    print("BVP fmm_order %d, qbx_order %d" % (fmm_order, qbx_order))
+    print("#" * 80)
+
+    return get_bvp_error(lpot_source, fmm_order, qbx_order, k=0)
+
+# }}}
+
+
 def main():
     import os
     os.nice(1)
@@ -334,7 +494,6 @@ def main():
                                n_arms=GREEN_ERROR_EXPERIMENT_N_ARMS,
                                fmm_orders=GREEN_ERROR_EXPERIMENT_FMM_ORDERS,
                                qbx_orders=GREEN_ERROR_EXPERIMENT_QBX_ORDERS)
-    """
 
     # BVP error experiment
     
@@ -342,8 +501,9 @@ def main():
                                n_arms=BVP_ERROR_EXPERIMENT_N_ARMS,
                                fmm_orders=BVP_ERROR_EXPERIMENT_FMM_ORDERS,
                                qbx_orders=BVP_ERROR_EXPERIMENT_QBX_ORDERS)
+    """
 
-    run_bvp_error_experiment()
+    run_bvp_experiment()
 
     # run_bvp_error_experiment(use_gigaqbx_fmm=True)
     # run_particle_distributions_experiment()
