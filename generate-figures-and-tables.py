@@ -75,20 +75,23 @@ def fmt(val):
         return val
     return f"{val:e}"
 
+
+def converged_fmt(item, converged):
+    if not converged:
+        return item
+    return r"\converged{%s}" % item
+
+
+def is_converged(err, ref):
+    # Converged if err is within 1% of ref or lower.
+    return err <= ref * 1.01
+
 # }}}
 
 
 # {{{ green error table
 
 def generate_green_error_table(infile, scheme_name):
-    def converged_fmt(item, converged):
-        if not converged:
-            return item
-        return r"\converged{%s}" % item
-
-    def is_converged(err, ref):
-        # Converged if err is within 1% of ref or lower.
-        return err <= ref * 1.01
 
     results_l2 = {}
     results_linf = {}
@@ -187,12 +190,128 @@ def generate_green_error_table(infile, scheme_name):
 # }}}
 
 
+# {{{ bvp table
+
+def generate_bvp_error_table(infile_bvp, infile_green):
+    # {{{ read inputs
+
+    bvp_error_l2 = {}
+    bvp_error_linf = {}
+    bvp_gmres_nit = {}
+
+    fmm_orders = set()
+    qbx_orders = set()
+
+    for row in csv.DictReader(infile_bvp):
+        fmm_order = int(row["fmm_order"])
+        fmm_orders.add(fmm_order)
+
+        qbx_order = int(row["qbx_order"])
+        qbx_orders.add(qbx_order)
+
+        bvp_error_l2[fmm_order, qbx_order] = float(row["err_l2"])
+        bvp_error_linf[fmm_order, qbx_order] = float(row["err_linf"])
+        bvp_gmres_nit[fmm_order, qbx_order] = row["gmres_nit"]
+
+    fmm_orders = sorted(fmm_orders)
+    qbx_orders = sorted(qbx_orders)
+
+    green_error_l2 = {}
+    green_error_linf = {}
+
+    for row in csv.DictReader(infile_green):
+        fmm_order = int(row["fmm_order"])
+        qbx_order = int(row["qbx_order"])
+        green_error_l2[fmm_order, qbx_order] = float(row["err_l2"])
+        green_error_linf[fmm_order, qbx_order] = float(row["err_linf"])
+
+    del fmm_order
+    del qbx_order
+
+    # }}}
+
+    # {{{ generate convergence data
+
+    def estimate_convergence(results_table):
+        converged = {}
+
+        for p, next_p in zip(fmm_orders, fmm_orders[1:]):
+            for q in qbx_orders:
+                converged[p, q] = False
+                converged[next_p, q] = False
+
+                if is_converged(results_table[p, q], results_table[next_p, q]):
+                    converged[p, q] = True
+                    converged[next_p, q] = True
+
+        return converged
+
+    converged_bvp_error_l2 = estimate_convergence(bvp_error_l2)
+    converged_bvp_error_linf = estimate_convergence(bvp_error_linf)
+
+    converged_green_error_l2 = estimate_convergence(green_error_l2)
+    converged_green_error_linf = estimate_convergence(green_error_linf)
+
+    # }}}
+
+    from pytools import flatten
+
+    headers = list(flatten(
+        [[r"{$(1/2)^{\pfmm+1}$}", r"{$\pfmm$}"]]
+        + [[r"{$\pqbx=%d$}" % p, "\#it"] for p in qbx_orders]))
+
+    column_formats = "".join([
+        "S[table-format = 1e-1, round-precision = 0]",
+        "c"] + ["S", "c"] * len(qbx_orders))
+
+    def build_table(bvp_errors, converged_bvp_errors, green_errors, converged_green_errors):
+        table = []
+
+        for p in fmm_orders:
+            fmm_error = ""
+            if p != fmm_orders[0]:
+                fmm_error += r"\cmidrule{1-%d} " % (2 * len(qbx_orders) + 2)
+            fmm_error += fmt(2 ** - (p + 1))
+            row = [fmm_error]
+            row.append(str(p))
+            for q in qbx_orders:
+                err = fmt(bvp_errors[p, q])
+                row.append(converged_fmt(err, converged_bvp_errors[p, q]))
+                nit = str(bvp_gmres_nit[p, q])
+                row.append(nit)
+            table.append(row)
+
+            row = ["", ""]
+            for q in qbx_orders:
+                err = fmt(green_errors[p, q])
+                row.append(converged_fmt(err, converged_green_errors[p, q]))
+                row.append("")
+            table.append(row)
+
+        return table
+
+    table_l2 = build_table(bvp_error_l2, converged_bvp_error_l2, green_error_l2,
+                           converged_green_error_l2)
+
+    table_linf = build_table(bvp_error_linf, converged_bvp_error_linf,
+                             green_error_linf, converged_green_error_linf)
+
+    print_table(table_l2, headers, f"bvp-l2.tex", column_formats)
+    print_table(table_linf, headers, f"bvp-linf.tex", column_formats)
+
+# }}}
+
+
 def main():
     with open_data_file("green-error-results-gigaqbx-65.csv", "r", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")
 
     with open_data_file("green-error-results-qbxfmm-65.csv", "r", newline="") as infile:
         generate_green_error_table(infile, scheme_name="qbxfmm")
+
+    with open_data_file("green-error-results-gigaqbx-25.csv", newline="") as infile_green,\
+         open_data_file("bvp-results.csv", newline="") as infile_bvp:
+        generate_bvp_error_table(infile_bvp, infile_green)
 
     # run_bvp_error_experiment(use_gigaqbx_fmm=True)
     # run_particle_distributions_experiment()
