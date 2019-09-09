@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import numpy as np
-import numpy.linalg as la
 
 import csv
 import os
@@ -258,7 +257,7 @@ def generate_bvp_error_table(infile_bvp, infile_green):
 
     headers = list(flatten(
         [[r"{$(1/2)^{\pfmm+1}$}", r"{$\pfmm$}"]]
-        + [[r"{$\pqbx=%d$}" % p, "\#it"] for p in qbx_orders]))
+        + [[r"{$\pqbx=%d$}" % p, r"\#it"] for p in qbx_orders]))
 
     column_formats = "".join([
         "S[table-format = 1e-1, round-precision = 0]",
@@ -296,25 +295,67 @@ def generate_bvp_error_table(infile_bvp, infile_green):
     table_linf = build_table(bvp_error_linf, converged_bvp_error_linf,
                              green_error_linf, converged_green_error_linf)
 
-    print_table(table_l2, headers, f"bvp-l2.tex", column_formats)
-    print_table(table_linf, headers, f"bvp-linf.tex", column_formats)
+    print_table(table_l2, headers, "bvp-l2.tex", column_formats)
+    print_table(table_linf, headers, "bvp-linf.tex", column_formats)
+
+# }}}
+
+
+# {{{ particle distribution table
+
+PERCENTILES = (20, 40, 60, 80, 100)
+
+
+def generate_particle_distribution_table(infile):
+    rows = []
+
+    headers = [
+            r"\multirow{2}{*}{$n$}",
+            r"\cellcenter{\multirow{2}{*}{$N_S$}}",
+            r"\cellcenter{\multirow{2}{*}{$M_C$}}",
+            r"\multicolumn{5}{c}{Percentiles}"]
+
+    for entry in csv.DictReader(infile):
+        row = [
+                str(entry["n_arms"]),
+                str(entry["nsources"]),
+                "%.1f" % float(entry["avg"]),
+                ]
+        row.extend(
+                "%.1f" % float(entry["percentile_%d" % pct]) for pct in PERCENTILES)
+        rows.append(row)
+
+    rows.sort(key=lambda row: int(row[0]))
+    rows.insert(
+            0,
+            [
+                r"\cmidrule{4-8}",
+                "",
+                "",
+            ] + [
+                r"\cellcenter{%d\%%}" % pct for pct in PERCENTILES])
+
+    print_table(rows, headers, "particle-distributions.tex", "r" * len(rows[0]))
 
 # }}}
 
 
 def main():
-    with open_data_file("green-error-results-gigaqbx-65.csv", "r", newline="") as infile:
+    """
+    with open_data_file("green-error-results-gigaqbx-65.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")
 
-    with open_data_file("green-error-results-qbxfmm-65.csv", "r", newline="") as infile:
+    with open_data_file("green-error-results-qbxfmm-65.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="qbxfmm")
 
     with open_data_file("green-error-results-gigaqbx-25.csv", newline="") as infile_green,\
-         open_data_file("bvp-results.csv", newline="") as infile_bvp:
+            open_data_file("bvp-results.csv", newline="") as infile_bvp:
         generate_bvp_error_table(infile_bvp, infile_green)
+    """
 
-    # run_bvp_error_experiment(use_gigaqbx_fmm=True)
-    # run_particle_distributions_experiment()
+    with open_data_file("particle-distributions.csv", newline="") as infile:
+        generate_particle_distribution_table(infile)
+
     # run(run_complexity_experiment, use_gigaqbx_fmm=True, compute_wall_times=False)
     # run(run_complexity_experiment, use_gigaqbx_fmm=False)
     # run(run_from_sep_smaller_threshold_complexity_experiment)

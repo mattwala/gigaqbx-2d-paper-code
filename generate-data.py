@@ -68,6 +68,14 @@ BVP_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
 # }}}
 
 
+# {{{ particle distribution experiment params
+
+PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES = [20, 40, 60, 80, 100]
+PARTICLE_DISTRIBUTION_EXPERIMENT_ARMS = ARMS
+
+# }}}
+
+
 # {{{ general utils
 
 @memoize
@@ -436,7 +444,7 @@ def run_bvp_experiment():
     from itertools import product
     fmm_orders = BVP_EXPERIMENT_FMM_ORDERS
     qbx_orders = BVP_EXPERIMENT_QBX_ORDERS
-    
+
     order_pairs = list(product(fmm_orders, qbx_orders))
 
     with multiprocessing.Pool(POOL_WORKERS) as pool:
@@ -475,14 +483,58 @@ def _bvp_experiment_body(fmm_and_qbx_order_pair):
 # }}}
 
 
+# {{{ particle distributions
+
+PARTICLE_DISTRIBUTION_FIELDS = (
+        ["n_arms", "nsources", "ncenters", "avg"]
+        + ["percentile_%d" % pct for pct in PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES])
+
+
+def run_particle_distributions_experiment():
+    cl_ctx = cl.create_some_context(interactive=False)
+
+    from utils import get_qbx_center_neighborhood_sizes
+
+    rows = []
+
+    for n_arms in PARTICLE_DISTRIBUTION_EXPERIMENT_ARMS:
+        lpot_source = get_geometry(cl_ctx, n_arms, use_gigaqbx_fmm=True)
+        neighborhood_sizes, nsources, ncenters = (
+                get_qbx_center_neighborhood_sizes(lpot_source, 8 / TCF))
+
+        row = dict(
+                n_arms=n_arms,
+                nsources=nsources,
+                ncenters=ncenters,
+                avg=FLOAT_OUTPUT_FMT % np.mean(neighborhood_sizes))
+
+        percentiles = np.percentile(neighborhood_sizes,
+                PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES)
+
+        for pct, val in zip(
+                PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES,
+                percentiles):
+            row["percentile_%d" % pct] = FLOAT_OUTPUT_FMT % val
+
+        rows.append(row)
+
+    with make_output_file("particle-distributions.csv", newline="") as outfile:
+        writer = csv.DictWriter(outfile, PARTICLE_DISTRIBUTION_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+# }}}
+
+
 def main():
     import os
     os.nice(1)
 
     multiprocessing.set_start_method("spawn")
 
-    # Uncomment everything to gather all experiment data for the paper.
     """
+    # Uncomment everything to gather all experiment data for the paper.
     # Green error experiments.
 
     run_green_error_experiment(use_gigaqbx_fmm=True,
@@ -496,17 +548,16 @@ def main():
                                qbx_orders=GREEN_ERROR_EXPERIMENT_QBX_ORDERS)
 
     # BVP error experiment
-    
+
     run_green_error_experiment(use_gigaqbx_fmm=True,
                                n_arms=BVP_ERROR_EXPERIMENT_N_ARMS,
                                fmm_orders=BVP_ERROR_EXPERIMENT_FMM_ORDERS,
                                qbx_orders=BVP_ERROR_EXPERIMENT_QBX_ORDERS)
-    """
 
     run_bvp_experiment()
+    """
 
-    # run_bvp_error_experiment(use_gigaqbx_fmm=True)
-    # run_particle_distributions_experiment()
+    run_particle_distributions_experiment()
     # run(run_complexity_experiment, use_gigaqbx_fmm=True,
     # compute_wall_times=False)
     # run(run_complexity_experiment, use_gigaqbx_fmm=False)
