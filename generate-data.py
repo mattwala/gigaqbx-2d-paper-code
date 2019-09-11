@@ -860,11 +860,13 @@ def main():
     # separately created contexts.)
     multiprocessing.set_start_method("spawn")
 
+    """
     # Wall time (should be run before os.nice(1) is called below, because
     # the purposes of these experiments is to measure the performance)
     run_wall_time_experiment(use_gigaqbx_fmm=True)
 
     run_wall_time_experiment(use_gigaqbx_fmm=False)
+    """
 
     # Be nice to other users on the machine.
     os.nice(1)
