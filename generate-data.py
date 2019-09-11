@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+import csv
+import collections
+import logging
+import multiprocessing
+import os
+
 import numpy as np
 import numpy.linalg as la
 import pyopencl as cl
@@ -7,16 +13,13 @@ import pyopencl.clmath  # noqa
 
 from boxtree.area_query import AreaQueryElementwiseTemplate
 from functools import partial
+from itertools import product
 from meshmode.mesh.generation import (  # noqa
         ellipse, cloverleaf, NArmedStarfish, drop, n_gon, qbx_peanut,
         WobblyCircle, make_curve_mesh, starfish)
 from pytential import bind, sym, norm
 from pytools import memoize
 
-import csv
-import logging
-import multiprocessing
-import os
 
 logging.basicConfig(level=logging.INFO)
 
@@ -50,11 +53,21 @@ FLOAT_OUTPUT_FMT = "%.17e"
 # }}}
 
 
+GreenErrorParams = collections.namedtuple(
+        "GreenErrorParams",
+        "n_arms, fmm_order, qbx_order")
+
+
 # {{{ green error experiment params
 
 GREEN_ERROR_EXPERIMENT_N_ARMS = 65
 GREEN_ERROR_EXPERIMENT_FMM_ORDERS = ["inf", 3, 5, 10, 15, 20]
 GREEN_ERROR_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
+GREEN_ERROR_EXPERIMENT_PARAMS = [
+        GreenErrorParams(GREEN_ERROR_EXPERIMENT_N_ARMS, *p)
+        for p in product(
+            GREEN_ERROR_EXPERIMENT_FMM_ORDERS,
+            GREEN_ERROR_EXPERIMENT_QBX_ORDERS)]
 
 # }}}
 
@@ -65,20 +78,56 @@ BVP_EXPERIMENT_N_ARMS = 25
 BVP_EXPERIMENT_FMM_ORDERS = [3, 5, 10, 15, 20]
 BVP_EXPERIMENT_QBX_ORDERS = [3, 5, 7, 9]
 
+BVP_EXPERIMENT_GREEN_ERROR_PARAMS = [
+        GreenErrorParams(BVP_EXPERIMENT_N_ARMS, *p)
+        for p in product(BVP_EXPERIMENT_FMM_ORDERS, BVP_EXPERIMENT_QBX_ORDERS)]
+
 # }}}
 
 
 # {{{ particle distribution experiment params
 
 PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES = [20, 40, 60, 80, 100]
-PARTICLE_DISTRIBUTION_EXPERIMENT_ARMS = ARMS
+PARTICLE_DISTRIBUTION_EXPERIMENT_N_ARMS_LIST = ARMS
+
+# }}}
+
+
+# {{{ complexity experiment params
+
+COMPLEXITY_EXPERIMENT_N_ARMS_LIST = ARMS
+
+COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS = [(7, 3), (15, 7)]
+COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS = [
+        GreenErrorParams(n_arms, fmm_order, qbx_order)
+        for n_arms in COMPLEXITY_EXPERIMENT_N_ARMS_LIST
+        for fmm_order, qbx_order
+            in COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS]
+
+COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS = [(15, 3), (30, 7)]
+COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS = [
+        GreenErrorParams(n_arms, fmm_order, qbx_order)
+        for n_arms in COMPLEXITY_EXPERIMENT_N_ARMS_LIST
+        for fmm_order, qbx_order
+            in COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS]
+
+# }}}
+
+
+# {{{ wall time experiment params
+
+WALL_TIME_EXPERIMENT_TIMING_ROUNDS = 3
+WALL_TIME_EXPERIMENT_N_ARMS_LIST = ARMS
+WALL_TIME_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS = \
+        COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS
+WALL_TIME_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS = \
+        COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS
 
 # }}}
 
 
 # {{{ general utils
 
-@memoize
 def get_geometry(ctx, n_arms, use_gigaqbx_fmm, fmm_backend=None,
                  from_sep_smaller_threshold=None):
     """Return a QBXLayerPotentialSource representing an n-armed starfish
@@ -264,51 +313,49 @@ def get_green_error(lpot_source, fmm_order, qbx_order, k=0, time=None):
 
 # {{{ green error experiment
 
-GREEN_ERROR_FIELDS = ["fmm_order", "qbx_order", "err_l2", "err_linf"]
+GREEN_ERROR_FIELDS = ("n_arms", "fmm_order", "qbx_order", "err_l2", "err_linf")
 
 
-def run_green_error_experiment(use_gigaqbx_fmm, n_arms, fmm_orders, qbx_orders):
-    from itertools import product
-    order_pairs = list(product(fmm_orders, qbx_orders))
-
+def run_green_error_experiment(use_gigaqbx_fmm, params, label):
     with multiprocessing.Pool(POOL_WORKERS) as pool:
         results = pool.map(
-                partial(_green_error_experiment_body, use_gigaqbx_fmm, n_arms),
-                order_pairs)
+                partial(_green_error_experiment_body, use_gigaqbx_fmm),
+                params)
 
-    output_path = "green-error-results-%s-%d.csv" % (
-            "gigaqbx" if use_gigaqbx_fmm else "qbxfmm",
-            n_arms)
+    output_path = "%s-results-%s.csv" % (
+            label, "gigaqbx" if use_gigaqbx_fmm else "qbxfmm")
 
     with make_output_file(output_path, newline="") as outfile:
         writer = csv.DictWriter(outfile, GREEN_ERROR_FIELDS)
         writer.writeheader()
-        for order_pair, result in zip(order_pairs, results):
+        for param, result in zip(params, results):
             row = dict(
-                    fmm_order=order_pair[0],
-                    qbx_order=order_pair[1],
+                    n_arms=param.n_arms,
+                    fmm_order=param.fmm_order,
+                    qbx_order=param.qbx_order,
                     err_l2=FLOAT_OUTPUT_FMT % result[0],
                     err_linf=FLOAT_OUTPUT_FMT % result[1])
             writer.writerow(row)
 
 
-def _green_error_experiment_body(use_gigaqbx_fmm, n_arms, fmm_and_qbx_order_pair):
+def _green_error_experiment_body(use_gigaqbx_fmm, params):
     # This returns a tuple (err_l2, err_linf).
     cl_ctx = cl.create_some_context(interactive=False)
 
-    fmm_order, qbx_order = fmm_and_qbx_order_pair
+    fmm_order = params.fmm_order
+    qbx_order = params.qbx_order
 
     if fmm_order == "inf":
         # The number of particles is impractical for direct eval.
         # GIGAQBX + fmmlib appears to be the most reliable fast
         # eval option.
         lpot_source = get_geometry(cl_ctx,
-                                   n_arms,
+                                   params.n_arms,
                                    use_gigaqbx_fmm=True,
                                    fmm_backend="fmmlib")
     else:
         lpot_source = get_geometry(cl_ctx,
-                                   n_arms,
+                                   params.n_arms,
                                    use_gigaqbx_fmm=use_gigaqbx_fmm)
 
     print("#" * 80)
@@ -437,7 +484,7 @@ def get_bvp_error(lpot_source, fmm_order, qbx_order, k=0, time=None):
     return err_l2, err_linf, gmres_result.iteration_count
 
 
-BVP_FIELDS = ["fmm_order", "qbx_order", "err_l2", "err_linf", "gmres_nit"]
+BVP_FIELDS = ("fmm_order", "qbx_order", "err_l2", "err_linf", "gmres_nit")
 
 
 def run_bvp_experiment():
@@ -486,8 +533,10 @@ def _bvp_experiment_body(fmm_and_qbx_order_pair):
 # {{{ particle distributions
 
 PARTICLE_DISTRIBUTION_FIELDS = (
-        ["n_arms", "nsources", "ncenters", "avg"]
-        + ["percentile_%d" % pct for pct in PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES])
+        ("n_arms", "nsources", "ncenters", "avg")
+        + tuple(
+            "percentile_%d" % pct
+            for pct in PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES))
 
 
 def run_particle_distributions_experiment():
@@ -497,7 +546,7 @@ def run_particle_distributions_experiment():
 
     rows = []
 
-    for n_arms in PARTICLE_DISTRIBUTION_EXPERIMENT_ARMS:
+    for n_arms in PARTICLE_DISTRIBUTION_EXPERIMENT_N_ARMS_LIST:
         lpot_source = get_geometry(cl_ctx, n_arms, use_gigaqbx_fmm=True)
         neighborhood_sizes, nsources, ncenters = (
                 get_qbx_center_neighborhood_sizes(lpot_source, 8 / TCF))
@@ -527,45 +576,333 @@ def run_particle_distributions_experiment():
 # }}}
 
 
-def main():
-    import os
-    os.nice(1)
+# {{{ fmm cost
 
+class GigaQBXPaperTranslationCostModel(object):
+
+    def __init__(self, dim, nlevels):
+        from pymbolic import var
+        p_qbx = var("p_qbx")
+        p_fmm_by_level = np.array([var("p_fmm_lev%d" % i) for i in range(nlevels)])
+
+        # Note: This means order n is modeled as having n coeffs in 2D, instead of (n + 1) coeffs.
+        # This is consistent with the model in the 2D paper.
+        self.ncoeffs_fmm_by_level = p_fmm_by_level ** (dim - 1)
+        self.ncoeffs_qbx = p_qbx ** (dim - 1)
+
+    @staticmethod
+    def direct():
+        return 1
+
+    def p2qbxl(self):
+        return self.ncoeffs_qbx
+
+    def qbxl2p(self):
+        return self.ncoeffs_qbx
+
+    def p2l(self, level):
+        return self.ncoeffs_fmm_by_level[level]
+
+    def l2p(self, level):
+        return self.ncoeffs_fmm_by_level[level]
+
+    def p2m(self, level):
+        return self.ncoeffs_fmm_by_level[level]
+
+    def m2p(self, level):
+        return self.ncoeffs_fmm_by_level[level]
+
+    def m2m(self, src_level, tgt_level):
+        return self.e2e_cost(
+                self.ncoeffs_fmm_by_level[src_level],
+                self.ncoeffs_fmm_by_level[tgt_level])
+
+    def l2l(self, src_level, tgt_level):
+        return self.e2e_cost(
+                self.ncoeffs_fmm_by_level[src_level],
+                self.ncoeffs_fmm_by_level[tgt_level])
+
+    def m2l(self, src_level, tgt_level):
+        return self.e2e_cost(
+                self.ncoeffs_fmm_by_level[src_level],
+                self.ncoeffs_fmm_by_level[tgt_level])
+
+    def m2qbxl(self, level):
+        return self.e2e_cost(
+                self.ncoeffs_fmm_by_level[level],
+                self.ncoeffs_qbx)
+
+    def l2qbxl(self, level):
+        return self.e2e_cost(
+                self.ncoeffs_fmm_by_level[level],
+                self.ncoeffs_qbx)
+
+    def e2e_cost(self, nsource_coeffs, ntarget_coeffs):
+        return nsource_coeffs * ntarget_coeffs
+
+
+CONSTANT_ONE_PARAMS = dict(
+        c_l2l=1,
+        c_l2p=1,
+        c_l2qbxl=1,
+        c_m2l=1,
+        c_m2m=1,
+        c_m2p=1,
+        c_m2qbxl=1,
+        c_p2l=1,
+        c_p2m=1,
+        c_p2p=1,
+        c_p2qbxl=1,
+        c_qbxl2p=1,
+        )
+
+
+def get_fmm_cost(lpot_source):
+    """Return the modeled cost of on-surface evaluation for the single-layer
+    potential."""
+
+    from sumpy.kernel import LaplaceKernel
+    k_sym = LaplaceKernel(lpot_source.ambient_dim)
+    sym_op_S = sym.S(k_sym, sym.var("sigma"), qbx_forced_limit=+1)
+
+    inspect_geo_data_result = []
+
+    def inspect_geo_data(insn, bound_expr, geo_data):
+        from pytential.qbx.cost import CostModel
+        cost_model = CostModel(
+                translation_cost_model_factory=GigaQBXPaperTranslationCostModel,
+                calibration_params=CONSTANT_ONE_PARAMS)
+
+        kernel = lpot_source.get_fmm_kernel(insn.kernels)
+        kernel_arguments = insn.kernel_arguments
+
+        result = cost_model(geo_data, kernel, kernel_arguments)
+        inspect_geo_data_result.append(result)
+
+        return False
+
+    lpot_source = lpot_source.copy(geometry_data_inspector=inspect_geo_data)
+    op_S = bind(lpot_source, sym_op_S)
+
+    with cl.CommandQueue(lpot_source.cl_context) as queue:
+        density_discr = lpot_source.density_discr
+        nodes = density_discr.nodes().with_queue(queue)
+        sigma = cl.clmath.sin(10 * nodes[0])
+        op_S(queue, sigma=sigma)
+
+    return inspect_geo_data_result[0]
+
+
+STAGES = (
+        "form_multipoles",
+        "coarsen_multipoles",
+        "eval_direct_list1",
+        "eval_direct_list3",
+        "eval_direct_list4",
+        "multipole_to_local",
+        "eval_multipoles",
+        "form_locals",
+        "refine_locals",
+        "eval_locals",
+        "form_global_qbx_locals_list1",
+        "form_global_qbx_locals_list3",
+        "form_global_qbx_locals_list4",
+        "translate_box_local_to_qbx_local",
+        "eval_qbx_expansions")
+
+
+COMPLEXITY_FIELDS = ("n_arms", "nparticles") + STAGES
+
+
+def run_complexity_experiment(use_gigaqbx_fmm):
+    _get_complexity_experiment_results(use_gigaqbx_fmm, from_sep_smaller_threshold=15)
+
+
+def _get_complexity_experiment_results(use_gigaqbx_fmm, from_sep_smaller_threshold):
+    with multiprocessing.Pool(POOL_WORKERS) as pool:
+        results = pool.map(
+                partial(
+                        _complexity_experiment_body,
+                        use_gigaqbx_fmm,
+                        from_sep_smaller_threshold),
+                COMPLEXITY_EXPERIMENT_N_ARMS_LIST)
+
+    fmm_and_qbx_order_pairs = (
+            COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS
+            if use_gigaqbx_fmm else COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS)
+
+    for fmm_order, qbx_order in fmm_and_qbx_order_pairs:
+        scheme_name = "gigaqbx" if use_gigaqbx_fmm else "qbxfmm"
+        outfile = make_output_file(
+                f"complexity-results-fmm{fmm_order}-qbx{qbx_order}-{scheme_name}"
+                f"-threshold{from_sep_smaller_threshold}.csv",
+                newline="")
+
+        writer = csv.DictWriter(outfile, COMPLEXITY_FIELDS)
+        writer.writeheader()
+
+        for n_arms, result in zip(COMPLEXITY_EXPERIMENT_N_ARMS_LIST, results):
+            # Adjust QBX and FMM order params.
+            new_params = result.params.copy()
+            new_params["p_qbx"] = qbx_order
+            for lev in range(new_params["nlevels"]):
+                new_params["p_fmm_lev%d" % lev] = fmm_order
+
+            costs = result.with_params(new_params).get_predicted_times()
+            row = {}
+            row["n_arms"] = n_arms
+            row["nparticles"] = new_params["nsources"] + new_params["ntargets"]
+            for stage in STAGES:
+                row[stage] = costs[stage]
+            writer.writerow(row)
+
+        outfile.close()
+
+
+def _complexity_experiment_body(use_gigaqbx_fmm, from_sep_smaller_threshold, n_arms):
+    cl_ctx = cl.create_some_context(interactive=False)
+    lpot_source = get_geometry(
+            cl_ctx,
+            n_arms,
+            use_gigaqbx_fmm=use_gigaqbx_fmm,
+            from_sep_smaller_threshold=from_sep_smaller_threshold)
+    return get_fmm_cost(lpot_source)
+
+# }}}
+
+
+# {{{ from_sep_smaller_threshold experiment
+
+def run_from_sep_smaller_threshold_complexity_experiment():
+    _get_complexity_experiment_results(use_gigaqbx_fmm=True, from_sep_smaller_threshold=0)
+
+# }}}
+
+
+# {{{ wall time experiment
+
+WALL_TIME_EXPERIMENT_FIELDS = (
+        ("n_arms", "fmm_order", "qbx_order")
+        + tuple("run%d_time" % i for i in range(WALL_TIME_EXPERIMENT_TIMING_ROUNDS)))
+
+
+def run_wall_time_experiment(use_gigaqbx_fmm):
+    cl_ctx = cl.create_some_context(interactive=False)
+
+    if use_gigaqbx_fmm:
+        fmm_and_qbx_orders = WALL_TIME_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS
+    else:
+        fmm_and_qbx_orders = WALL_TIME_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS
+        
+    scheme_name = "gigaqbx" if use_gigaqbx_fmm else "qbxfmm"
+    
+    outfile = make_output_file(f"wall-time-results-{scheme_name}.csv", newline="")
+    
+    writer = csv.DictWriter(outfile, WALL_TIME_EXPERIMENT_FIELDS)
+    writer.writeheader()
+
+    for n_arms in WALL_TIME_EXPERIMENT_N_ARMS_LIST:
+        lpot_source = get_geometry(cl_ctx, n_arms, use_gigaqbx_fmm)
+
+        for fmm_order, qbx_order in fmm_and_qbx_orders:
+            row = dict(n_arms=n_arms, fmm_order=fmm_order, qbx_order=qbx_order)
+
+            wall_times = get_slp_wall_times(lpot_source, fmm_order, qbx_order)
+            for i, wall_time in enumerate(wall_times):
+                row[f"run{i}_time"] = FLOAT_OUTPUT_FMT % wall_time
+
+            writer.writerow(row)
+
+
+def get_slp_wall_times(lpot_source, fmm_order, qbx_order):
+    queue = cl.CommandQueue(lpot_source.cl_context)
+
+    lpot_source = lpot_source.copy(
+            qbx_order=qbx_order,
+            fmm_level_to_order=(
+                False if fmm_order is False else lambda *args: fmm_order))
+
+    d = lpot_source.ambient_dim
+
+    u_sym = sym.var("u")
+
+    from sumpy.kernel import LaplaceKernel, HelmholtzKernel
+
+    S = sym.S(LaplaceKernel(d), u_sym, qbx_forced_limit=-1)
+    density_discr = lpot_source.density_discr
+
+    u = cl.array.empty(queue, density_discr.nnodes, np.float64)
+    u.fill(1)
+
+    op = bind(lpot_source, S)
+
+    # Warmup
+    op(queue, u=u)
+
+    times = []
+    from time import perf_counter as curr_time
+
+    for i in range(WALL_TIME_EXPERIMENT_TIMING_ROUNDS):
+        t_start = curr_time()
+        op(queue, u=u)
+        t_end = curr_time()
+        times.append(t_end - t_start)
+
+    return times
+
+# }}}
+
+
+def main():
+    # Mixing calls to fork() with OpenCL context creation is a bad idea. This
+    # call makes it safe to create an OpenCL context in the main
+    # thread. (Workers spawned by multiprocessing always use their own
+    # separately created contexts.)
     multiprocessing.set_start_method("spawn")
 
-    """
-    # Uncomment everything to gather all experiment data for the paper.
-    # Green error experiments.
+    # Wall time (should be run before os.nice(1) is called below, because
+    # the purposes of these experiments is to measure the performance)
+    run_wall_time_experiment(use_gigaqbx_fmm=True)
 
+    run_wall_time_experiment(use_gigaqbx_fmm=False)
+
+    # Be nice to other users on the machine.
+    os.nice(1)
+
+    # Green error
     run_green_error_experiment(use_gigaqbx_fmm=True,
-                               n_arms=GREEN_ERROR_EXPERIMENT_N_ARMS,
-                               fmm_orders=GREEN_ERROR_EXPERIMENT_FMM_ORDERS,
-                               qbx_orders=GREEN_ERROR_EXPERIMENT_QBX_ORDERS)
+                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
+                               label="green-error")
 
     run_green_error_experiment(use_gigaqbx_fmm=False,
-                               n_arms=GREEN_ERROR_EXPERIMENT_N_ARMS,
-                               fmm_orders=GREEN_ERROR_EXPERIMENT_FMM_ORDERS,
-                               qbx_orders=GREEN_ERROR_EXPERIMENT_QBX_ORDERS)
+                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
+                               label="green-error")
 
-    # BVP error experiment
-
+    # BVP error
     run_green_error_experiment(use_gigaqbx_fmm=True,
-                               n_arms=BVP_ERROR_EXPERIMENT_N_ARMS,
-                               fmm_orders=BVP_ERROR_EXPERIMENT_FMM_ORDERS,
-                               qbx_orders=BVP_ERROR_EXPERIMENT_QBX_ORDERS)
+                               params=BVP_EXPERIMENT_GREEN_ERROR_PARAMS,
+                               label="bvp-green-error")
 
     run_bvp_experiment()
-    """
 
+    # Particle distributions
     run_particle_distributions_experiment()
-    # run(run_complexity_experiment, use_gigaqbx_fmm=True,
-    # compute_wall_times=False)
-    # run(run_complexity_experiment, use_gigaqbx_fmm=False)
-    # run(run_from_sep_smaller_threshold_complexity_experiment)
 
-    # run(run_wall_time_experiment, use_gigaqbx_fmm=True)
-    # run(run_wall_time_experiment, use_gigaqbx_fmm=False)
-    # run(run_level_restriction_experiment)
+    # Complexity
+    run_complexity_experiment(use_gigaqbx_fmm=True)
+
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
+                               label="complexity-green-error")
+
+    run_complexity_experiment(use_gigaqbx_fmm=False)
+
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
+                               label="complexity-green-error")
+
+    # From-sep-smaller threshold
+    run_from_sep_smaller_threshold_complexity_experiment()
 
 
 if __name__ == "__main__":

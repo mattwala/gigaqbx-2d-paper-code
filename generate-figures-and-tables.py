@@ -18,19 +18,28 @@ switch_matplotlib_to_agg()
 import matplotlib.pyplot as plt  # noqa
 
 
+SMALLFONTSIZE = 8
 FONTSIZE = 10
+LINEWIDTH = 0.5
 
 
 def initialize_matplotlib():
     plt.rc("font", family="serif")
-    plt.rc("text", usetex=False)
+    plt.rc("text", usetex=True)
+    # https://stackoverflow.com/questions/40424249/vertical-alignment-of-matplotlib-legend-labels-with-latex-math
+    plt.rc(("text.latex",), preview=True)
     plt.rc("xtick", labelsize=FONTSIZE)
     plt.rc("ytick", labelsize=FONTSIZE)
-    plt.rc("axes", labelsize=0.01)
+    plt.rc("axes", labelsize=1)
     plt.rc("axes", titlesize=FONTSIZE)
+    plt.rc("axes", linewidth=LINEWIDTH)
     plt.rc("pgf", rcfonts=True)
-    # Needed on porter, which does not have xelatex
-    plt.rc("pgf", texsystem="pdflatex")
+    plt.rc("lines", linewidth=LINEWIDTH)
+    plt.rc("patch", linewidth=LINEWIDTH)
+    plt.rc("legend", fancybox=False)
+    plt.rc("legend", framealpha=1)
+    plt.rc("legend", frameon=False)
+    plt.rc("savefig", dpi=150)
 
 
 initialize_matplotlib()
@@ -91,7 +100,6 @@ def is_converged(err, ref):
 # {{{ green error table
 
 def generate_green_error_table(infile, scheme_name):
-
     results_l2 = {}
     results_linf = {}
 
@@ -340,21 +348,272 @@ def generate_particle_distribution_table(infile):
 # }}}
 
 
-def main():
+# {{{ complexity results
+
+_colors = plt.cm.Paired.colors  # pylint:disable=no-member
+
+
+class Colors(object):
+    LIGHT_BLUE  = _colors[0]
+    BLUE        = _colors[1]
+    LIGHT_GREEN = _colors[2]
+    GREEN       = _colors[3]
+    RED         = _colors[5]
+    ORANGE      = _colors[7]
+    PURPLE      = _colors[9]
+
+
+class QBXPerfLabelingBase(object):
+
+    silent_summed_features = (
+            "form_multipoles",
+            "coarsen_multipoles",
+            "eval_direct",
+            "eval_multipoles",
+            "refine_locals",
+            "eval_locals",
+            "translate_box_local_to_qbx_local",
+            "eval_qbx_expansions",
+            )
+    
+    perf_line_styles = ("x-", "+-", ".-", "*-", "s-", "d-")
+
+    summary_line_style = ".--"
+
+    summary_label = "all"
+
+    summary_label = "all"
+
+    summary_color = Colors.RED
+
+
+class GigaQBXPerfLabeling(QBXPerfLabelingBase):
+
+    perf_features = (
+            "form_global_qbx_locals_list1",
+            "multipole_to_local",
+            "form_global_qbx_locals_list3",
+            "translate_box_multipoles_to_qbx_local",
+            "form_global_qbx_locals_list4",
+            "form_locals")
+
+    perf_labels = (
+            r"$U_b$",
+            r"$V_b$",
+            r"$W_b^\mathrm{close}$",
+            r"$W_b^\mathrm{far}$",
+            r"$X_b^\mathrm{close}$",
+            r"$X_b^\mathrm{far}$")
+
+    perf_colors = (
+            Colors.ORANGE,
+            Colors.PURPLE,
+            Colors.LIGHT_BLUE,
+            Colors.BLUE,
+            Colors.LIGHT_GREEN,
+            Colors.GREEN)
+
+
+class QBXFMMPerfLabeling(QBXPerfLabelingBase):
+
+    perf_features = (
+            "form_global_qbx_locals_list1",
+            "multipole_to_local",
+            "translate_box_multipoles_to_qbx_local",
+            "form_locals")
+
+    perf_labels = (
+            r"$U_b$",
+            r"$V_b$",
+            r"$W_b$",
+            r"$X_b$")
+
+    perf_colors = (
+            Colors.ORANGE,
+            Colors.PURPLE,
+            Colors.BLUE,
+            Colors.GREEN)
+    
+
+def generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm):
+    subtitles = []
+    for fmm_order, qbx_order in input_order_pairs:
+        subtitles.append(rf"$pqbx = {qbx_order}$, $pfmm = {fmm_order}")
+
+    labeling = GigaQBXPerfLabeling if use_gigaqbx_fmm else QBXFMMPerfLabeling
+
+    x_values = [[] for _ in range(len(input_files))]
+    y_values = [[] for _ in range(len(input_files))]
+
+    for i, input_file in enumerate(input_files):
+        for row in csv.DictReader(input_file)
+            x_values[i].append(int(row["nparticles"]))
+            y_values[i].append(row)
+
+    ylabel = r"Cost $\sim$ Number of Flops"
+    xlabel = "Number of Particles"
+    name = "gigaqbx" if use_gigaqbx_fmm else "qbxfmm"
+
+    make_complexity_figure(
+            subtitles, x_values, y_values, labeling, ylabel, xlabel, name,
+            size_inches=(7, 2))
+
+
+def initialize_axes(ax, title, xlabel=None, ylabel=None, grid_axes=None):
+    if title is not None:
+        ax.set_title(title)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel, fontdict={"size": FONTSIZE})
+    if ylabel is not None:
+        ax.set_ylabel(ylabel, fontdict={"size": FONTSIZE})
+    if grid_axes is None:
+        grid_axes = "both"
+    ax.grid(lw=LINEWIDTH / 2, which="major", axis=grid_axes)
+
+
+def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
+                          xlabel, name, ylimits=None, size_inches=None,
+                          subplots_adjust=None, plot_title=None,
+                          plot_kind="loglog", postproc_func=None,
+                          summary_labels=None, grid_axes=None):
+    """Generate a figure with *n* subplots
+
+    Parameters:
+        subtitles: List of *n* subtitles
+        x_values: List of *n* lists of x values
+        y_values: List of *n* lists of results, which are dictionaries mapping
+            stage names to costs
+        labeling: Subclass of *QBXPerfLabelingBase*
+        ylabel: Label for y axis
+        xlabel: Label for x axis
+        ylimits: List of *n* y limits, or *None*
+        name: Output file name
+        size_inches: Passed to Figure.set_size_inches()
+        subplots_adjust: Passed to Figure.subplots_adjust()
+        plot_title: Plot tile
+
     """
-    with open_data_file("green-error-results-gigaqbx-65.csv", newline="") as infile:
+    fig, axes = plt.subplots(1, len(subtitles))
+
+    if size_inches:
+        fig.set_size_inches(*size_inches)
+
+    if len(subtitles) == 1:
+        axes = [axes]
+
+    if ylimits is None:
+        ylimits = (None,) * len(subtitles)
+
+    plot_options = dict(linewidth=LINEWIDTH, markersize=3)
+
+    for iax, (ax, axtitle) in enumerate(zip(axes, subtitles)):
+        if iax > 0:
+            ylabel = None
+        initialize_axes(ax, axtitle, xlabel=xlabel, ylabel=ylabel, grid_axes=grid_axes)
+
+    # Generate results.
+    for xs, ys, lim, ax in zip(x_values, y_values, ylimits, axes):
+        if lim:
+            ax.set_ylim(*lim)
+
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        if plot_kind == "loglog":
+            plotter = ax.loglog
+        elif plot_kind == "semilogy":
+            plotter = ax.semilogy
+        else:
+            raise ValueError("unknown plot kind")
+
+        # features
+        labels = []
+        for feature, label, style, color in zip(
+                labeling.perf_features,
+                labeling.perf_labels,
+                labeling.perf_line_styles,
+                labeling.perf_colors):
+            ylist = [y[feature] for y in ys]
+            l, = plotter(xs, ylist, style, color=color, label=label, **plot_options)
+            labels.append(l)
+
+        summary_values = [
+                sum(val for key, val in y.items()
+                    if key in
+                        labeling.perf_features + labeling.silent_summed_features)
+                for y in ys]
+
+        # summary
+        l, = plotter(xs,
+                summary_values,
+                labeling.summary_line_style,
+                label=labeling.summary_label,
+                color=labeling.summary_color,
+                **plot_options)
+
+        labels.append(l)
+
+        if summary_labels:
+            # label
+            for x, y, l in zip(xs, summary_values, summary_labels):
+                ax.text(
+                        x, y * 1.3, l, ha="center", va="bottom",
+                        fontsize=SMALLFONTSIZE)
+            miny, maxy = ax.get_ylim()
+            ax.set_ylim([miny, maxy * 1.7])
+
+    if postproc_func:
+        postproc_func(fig)
+
+    fig.legend(labels, labeling.perf_labels + ("all",), loc="center right",
+               fontsize=SMALLFONTSIZE)
+
+    suffix = "pdf" if GENERATE_PDF else "pgf"
+
+    if plot_title:
+        fig.suptitle(plot_title, fontsize=FONTSIZE)
+
+    if subplots_adjust:
+        fig.subplots_adjust(**subplots_adjust)
+
+    outfile = f"{OUTPUT_DIR}/complexity-{name}.{suffix}"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    fig.savefig(outfile, bbox_inches="tight")
+
+    print(f"Wrote {outfile}")
+
+# }}}
+
+
+def main():
+    with open_data_file("green-error-results-gigaqbx.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")
 
-    with open_data_file("green-error-results-qbxfmm-65.csv", newline="") as infile:
+    with open_data_file("green-error-results-qbxfmm.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="qbxfmm")
 
+    """
     with open_data_file("green-error-results-gigaqbx-25.csv", newline="") as infile_green,\
             open_data_file("bvp-results.csv", newline="") as infile_bvp:
         generate_bvp_error_table(infile_bvp, infile_green)
-    """
 
     with open_data_file("particle-distributions.csv", newline="") as infile:
         generate_particle_distribution_table(infile)
+    """
+
+    """
+    with open_data_file("complexity-results-fmm7-qbx3-gigaqbx.csv", newline="") as infile_fmm7_qbx3,\
+             open_data_file("complexity-results-fmm15-qbx10-gigaqbx.csv", newline="") as infile_fmm15_qbx10:
+        input_files = (infile_fmm7_qbx3, infile_fmm15_qbx10)
+        input_order_pairs = ((7, 3), (15, 10))
+        generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm=True)
+    """
+
+    with open_data_file("complexity-results-fmm15-qbx3-qbxfmm.csv", newline="") as infile_fmm15_qbx3,\
+             open_data_file("complexity-results-fmm30-qbx7-qbxfmm.csv", newline="") as infile_fmm30_qbx7:
+        input_files = (infile_fmm15_qbx3, infile_fmm30_qbx7)
+        input_order_pairs = ((15, 3), (30, 7))
+        generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm=False)
 
     # run(run_complexity_experiment, use_gigaqbx_fmm=True, compute_wall_times=False)
     # run(run_complexity_experiment, use_gigaqbx_fmm=False)
