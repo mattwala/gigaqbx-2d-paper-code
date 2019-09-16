@@ -585,6 +585,15 @@ def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
 # }}}
 
 
+EXPERIMENTS = (
+        "wall-time",
+        "green-error",
+        "bvp",
+        "particle-distributions",
+        "complexity",
+        "from-sep-smaller-threshold")
+
+
 def main():
     with open_data_file("green-error-results-gigaqbx.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import csv
 import collections
 import logging
@@ -781,9 +782,7 @@ def run_from_sep_smaller_threshold_complexity_experiment():
 
 # {{{ wall time experiment
 
-WALL_TIME_EXPERIMENT_FIELDS = (
-        ("n_arms", "fmm_order", "qbx_order")
-        + tuple("run%d_time" % i for i in range(WALL_TIME_EXPERIMENT_TIMING_ROUNDS)))
+WALL_TIME_EXPERIMENT_FIELDS = ("n_arms", "fmm_order", "qbx_order", "time")
 
 
 def run_wall_time_experiment(use_gigaqbx_fmm):
@@ -809,9 +808,8 @@ def run_wall_time_experiment(use_gigaqbx_fmm):
 
             wall_times = get_slp_wall_times(lpot_source, fmm_order, qbx_order)
             for i, wall_time in enumerate(wall_times):
-                row[f"run{i}_time"] = FLOAT_OUTPUT_FMT % wall_time
-
-            writer.writerow(row)
+                row[f"time"] = FLOAT_OUTPUT_FMT % wall_time
+                writer.writerow(row)
 
 
 def get_slp_wall_times(lpot_source, fmm_order, qbx_order):
@@ -853,56 +851,104 @@ def get_slp_wall_times(lpot_source, fmm_order, qbx_order):
 # }}}
 
 
-def main():
+EXPERIMENTS = (
+        "wall-time",
+        "green-error",
+        "bvp",
+        "particle-distributions",
+        "complexity",
+        "from-sep-smaller-threshold")
+
+
+def run_experiments(experiments):
     # Mixing calls to fork() with OpenCL context creation is a bad idea. This
     # call makes it safe to create an OpenCL context in the main
     # thread. (Workers spawned by multiprocessing always use their own
     # separately created contexts.)
     multiprocessing.set_start_method("spawn")
 
-    # Wall time (should be run before os.nice(1) is called below, because
-    # the purposes of these experiments is to measure the performance)
-    run_wall_time_experiment(use_gigaqbx_fmm=True)
-
-    run_wall_time_experiment(use_gigaqbx_fmm=False)
-
-    # Be nice to other users on the machine.
-    os.nice(1)
+    # Wall time
+    if "wall-time" in experiments:
+        run_wall_time_experiment(use_gigaqbx_fmm=True)
+        run_wall_time_experiment(use_gigaqbx_fmm=False)
 
     # Green error
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
-                               label="green-error")
-
-    run_green_error_experiment(use_gigaqbx_fmm=False,
-                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
-                               label="green-error")
+    if "green-error" in experiments:
+        run_green_error_experiment(use_gigaqbx_fmm=True,
+                                   params=GREEN_ERROR_EXPERIMENT_PARAMS,
+                                   label="green-error")
+        run_green_error_experiment(use_gigaqbx_fmm=False,
+                                   params=GREEN_ERROR_EXPERIMENT_PARAMS,
+                                   label="green-error")
 
     # BVP error
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=BVP_EXPERIMENT_GREEN_ERROR_PARAMS,
-                               label="bvp-green-error")
-
-    run_bvp_experiment()
+    if "bvp" in experiments:
+        run_green_error_experiment(use_gigaqbx_fmm=True,
+                                   params=BVP_EXPERIMENT_GREEN_ERROR_PARAMS,
+                                   label="bvp-green-error")
+        run_bvp_experiment()
 
     # Particle distributions
-    run_particle_distributions_experiment()
+    if "particle-distributions" in experiments:
+        run_particle_distributions_experiment()
 
     # Complexity
-    run_complexity_experiment(use_gigaqbx_fmm=True)
-
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
-                               label="complexity-green-error")
-
-    run_complexity_experiment(use_gigaqbx_fmm=False)
-
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
-                               label="complexity-green-error")
+    if "complexity" in experiments:
+        run_complexity_experiment(use_gigaqbx_fmm=True)
+        run_green_error_experiment(use_gigaqbx_fmm=True,
+                                   params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
+                                   label="complexity-green-error")
+        
+        run_complexity_experiment(use_gigaqbx_fmm=False)
+        run_green_error_experiment(use_gigaqbx_fmm=True,
+                                   params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
+                                   label="complexity-green-error")
 
     # From-sep-smaller threshold
-    run_from_sep_smaller_threshold_complexity_experiment()
+    if "from-sep-smaller-threshold" in experiments:
+        run_from_sep_smaller_threshold_complexity_experiment()
+
+
+def main():
+    names = ["'%s'" % name for name in EXPERIMENTS]
+    names[-1] = " and " + names[-1]
+
+    description = (
+            "This script collects data from one or more experiments. " \
+            " The names of the experiments are: " + ", ".join(names)
+            + ".")
+
+    parser = argparse.ArgumentParser(description=description)
+
+    parser.add_argument("-x",
+            metavar="experiment-name",
+            action="append",
+            dest="experiments",
+            default=[],
+            help="Run an experiment (can be specified multiple times)")
+
+    parser.add_argument("--all",
+            action="store_true",
+            dest="run_all",
+            help="Run all available experiments")
+    
+    parser.add_argument("--except",
+            action="append",
+            metavar="experiment-name",
+            dest="run_except",
+            default=[],
+            help="Do not an experiment (can be specified multiple times)")
+
+    result = parser.parse_args()
+
+    experiments = set()
+
+    if result.run_all:
+        experiments = set(EXPERIMENTS)
+    experiments |= set(result.experiments)
+    experiments -= set(result.run_except)
+
+    run_experiments(experiments)
 
 
 if __name__ == "__main__":
