@@ -701,7 +701,7 @@ def generate_wall_time_comparison_table(
         comparison_labels, scheme_name):
     rows_by_arms = {}
 
-    for i, infile, order_pair in enumerate(zip(input_files, order_pairs)):
+    for i, (infile, order_pair) in enumerate(zip(input_files, order_pairs)):
         for row in csv.DictReader(infile):
             n_arms = int(row["n_arms"])
             fmm_order = int(row["fmm_order"])
@@ -721,7 +721,7 @@ def generate_wall_time_comparison_table(
         for n_arms in rows_by_arms:
             row = rows_by_arms[n_arms]
             row.append("%.3f" % (
-                    int(row[numerator_col]) / int(row[denominator_col])))
+                    float(row[numerator_col]) / float(row[denominator_col])))
 
     table = []
     headers = ["$n$"] + list(input_labels) + list(comparison_labels)
@@ -769,9 +769,9 @@ def gen_figures_and_tables(experiments):
                 generate_wall_time_comparison_table(
                         input_files=input_files,
                         order_pairs=order_pairs,
-                        input_labels=("t_\text{qbxfmm}", "t_\text{giga}"),
+                        input_labels=(r"t_\text{qbxfmm}", r"t_\text{giga}"),
                         comparison_columns=((1, 0),),
-                        comparison_labels=("t_\text{giga} / t_\text{qbxfmm}",),
+                        comparison_labels=(r"t_\text{giga} / t_\text{qbxfmm}",),
                         scheme_name="qbx%d" % order_pairs[0][1])
 
     # Green error tables

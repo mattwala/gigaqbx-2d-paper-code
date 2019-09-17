@@ -762,7 +762,7 @@ def _get_complexity_experiment_results(
             row["n_arms"] = n_arms
             row["nparticles"] = new_params["nsources"] + new_params["ntargets"]
             row["fmm_order"] = fmm_order
-            row["qbx_order"] = fmm_order
+            row["qbx_order"] = qbx_order
             for stage in STAGES:
                 row[stage] = costs[stage]
             writer.writerow(row)
@@ -913,7 +913,7 @@ def run_experiments(experiments):
                 params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
                 label="complexity-green-error")
         run_green_error_experiment(
-                use_gigaqbx_fmm=True,
+                use_gigaqbx_fmm=False,
                 params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
                 label="complexity-green-error")
 
