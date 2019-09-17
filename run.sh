@@ -14,7 +14,7 @@ else
     exit 1
 fi
 
-MINICONDA_INSTALL_DIR=.miniconda3
+MINICONDA_INSTALL_DIR=.miniconda2
 
 if [ -d $MINICONDA_INSTALL_DIR ] && [ -d src ]
 then
@@ -28,7 +28,7 @@ else
     # Install software
     PATH="$MINICONDA_INSTALL_DIR/bin:$PATH" conda create --name inteq --file ${SPEC_FILE}
     source "$MINICONDA_INSTALL_DIR/bin/activate" inteq
-    pip install -r env/requirements.tx
+    pip install -r env/requirements.txt
 fi
 
 # Tell PyOpenCL to use POCL
