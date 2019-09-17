@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-import numpy as np
 
+import contextlib
 import csv
+import logging
 import os
 
+import numpy as np
 
 # Whether to generate a PDF file. If False, will generate pgf.
 GENERATE_PDF = True
@@ -21,6 +23,10 @@ import matplotlib.pyplot as plt  # noqa
 SMALLFONTSIZE = 8
 FONTSIZE = 10
 LINEWIDTH = 0.5
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def initialize_matplotlib():
@@ -74,7 +80,7 @@ def print_table(table, headers, outf_name, column_formats=None):
             my_print(" & ".join(row) + r"\\")
         my_print(r"\bottomrule")
         my_print(r"\end{tabular}")
-    print(f"Wrote output {outf_name}")
+    logger.info("Wrote %s", os.path.join(OUTPUT_DIR, outf_name))
 
 
 def fmt(val):
@@ -124,6 +130,32 @@ def generate_green_error_table(infile, scheme_name):
     fmm_orders = sorted(fmm_orders, key=lambda order: -1 if order == "inf" else order)
     qbx_orders = sorted(qbx_orders)
 
+    # {{{ generate convergence data
+
+    def estimate_convergence(results_table):
+        converged = {}
+
+        for q in qbx_orders:
+            converged["inf", q] = False
+
+        for p, next_p in zip(fmm_orders[1:], fmm_orders[2:] + [fmm_orders[0]]):
+            for q in qbx_orders:
+                converged[p, q] = False
+                if next_p != "inf":
+                    converged[next_p, q] = False
+
+                if is_converged(results_table[p, q], results_table[next_p, q]):
+                    converged[p, q] = True
+                    if next_p != "inf":
+                        converged[next_p, q] = True
+
+        return converged
+
+    converged_l2 = estimate_convergence(results_l2)
+    converged_linf = estimate_convergence(results_linf)
+
+    # }}}
+
     headers = (
             [r"{$(1/2)^{\pfmm+1}$}", r"{$\pfmm$}"]
             + [r"{$\pqbx=%d$}" % p for p in qbx_orders])
@@ -132,62 +164,32 @@ def generate_green_error_table(infile, scheme_name):
             "S[table-format = 1e-1, round-precision = 0]",
             "c"] + ["S"] * len(qbx_orders))
 
-    converged_values_l2 = []
-    converged_values_linf = []
+    # {{{ build table
 
-    table_l2 = []
-    table_linf = []
+    def build_table(results, converged):
+        table = []
 
-    for fmm_order in fmm_orders:
-        errs_l2 = []
-        errs_linf = []
-
-        converged_l2 = []
-        converged_linf = []
-
-        if fmm_order is False:
-            fmm_error = "{0}"
-        else:
-            fmm_error = 2 ** -(fmm_order + 1)
-
-        for iqbx_order, qbx_order in enumerate(qbx_orders):
-            err_l2 = results_l2[fmm_order, qbx_order]
-            err_linf = results_linf[fmm_order, qbx_order]
-
-            if (
-                    len(converged_values_l2) > iqbx_order
-                    and is_converged(err_l2, converged_values_l2[iqbx_order])):
-                converged_l2.append(True)
+        for p in fmm_orders:
+            if p == "inf":
+                fmm_error = "{0}"
             else:
-                converged_l2.append(False)
-
-            if fmm_order is False:
-                converged_values_l2.append(err_l2)
-
-            errs_linf.append(err_linf)
-
-            if (
-                    len(converged_values_linf) > iqbx_order
-                    and is_converged(err_linf, converged_values_linf[iqbx_order])):
-                converged_linf.append(True)
+                fmm_error = 2 ** - (p + 1)
+            row = [fmt(fmm_error)]
+            if p == "inf":
+                row.append("(direct)")
             else:
-                converged_linf.append(False)
+                row.append(str(p))
+            for q in qbx_orders:
+                err = fmt(results[p, q])
+                row.append(converged_fmt(err, converged[p, q]))
+            table.append(row)
 
-            if fmm_order is False:
-                converged_values_linf.append(err_linf)
+        return table
 
-        row_l2 = [fmt(fmm_error)]
-        row_l2.append(str(fmm_order) if fmm_order != "inf" else "(direct)")
-        for e, c in zip(errs_l2, converged_l2):
-            row_l2.append(converged_fmt(fmt(e), c))
-        table_l2.append(row_l2)
+    table_l2 = build_table(results_l2, converged_l2)
+    table_linf = build_table(results_linf, converged_linf)
 
-        row_linf = [fmt(fmm_error)]
-        row_linf.append(
-                str(fmm_order) if fmm_order != "inf" else "(direct)")
-        for e, c in zip(errs_linf, converged_linf):
-            row_linf.append(converged_fmt(fmt(e), c))
-        table_linf.append(row_linf)
+    # }}}
 
     print_table(table_l2, headers, f"green-error-l2-{scheme_name}.tex",
                 column_formats)
@@ -446,9 +448,15 @@ def generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm):
     y_values = [[] for _ in range(len(input_files))]
 
     for i, input_file in enumerate(input_files):
-        for row in csv.DictReader(input_file)
+        for row in csv.DictReader(input_file):
             x_values[i].append(int(row["nparticles"]))
-            y_values[i].append(row)
+            result = {}
+            for key in row:
+                try:
+                    result[key] = int(row[key])
+                except ValueError:
+                    pass
+            y_values[i].append(result)
 
     ylabel = r"Cost $\sim$ Number of Flops"
     xlabel = "Number of Particles"
@@ -576,11 +584,92 @@ def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
     if subplots_adjust:
         fig.subplots_adjust(**subplots_adjust)
 
-    outfile = f"{OUTPUT_DIR}/complexity-{name}.{suffix}"
+    outfile = os.path.join(OUTPUT_DIR, f"complexity-{name}.{suffix}")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     fig.savefig(outfile, bbox_inches="tight")
+    logger.info("Wrote %s", outfile)
 
-    print(f"Wrote {outfile}")
+# }}}
+
+
+# {{{ green error summary table
+
+def generate_green_error_summary_table(infile, fmm_and_qbx_order_pairs, scheme_name):
+    rows_by_arms = {}
+
+    for row in csv.DictReader(infile):
+        n_arms = int(row["n_arms"])
+        fmm_order = int(row["fmm_order"])
+        qbx_order = int(row["qbx_order"])
+        if n_arms not in rows_by_arms:
+            rows_by_arms[n_arms] = [None] * len(fmm_and_qbx_order_pairs)
+        result = rows_by_arms[n_arms]
+        index = fmm_and_qbx_order_pairs.index((fmm_order, qbx_order))
+        result[index] = row["err_linf"]
+
+    table = []
+    headers = ["$n$"] + [
+            r"{{$\pfmm={p}$, $\pqbx={q}$}}".format(p=p, q=q)
+            for p, q in fmm_and_qbx_order_pairs]
+
+    for n_arms in sorted(rows_by_arms):
+        row = [str(n_arms)] + rows_by_arms[n_arms]
+        table.append(row)
+
+    mean_row = [r"\cmidrule{1-%d}(avg.)" % (1 + len(fmm_and_qbx_order_pairs))]
+    for i in range(1, 1 + len(fmm_and_qbx_order_pairs)):
+        mean_row.append(
+                "%.17e" % np.mean([float(row[i]) for row in table]))
+
+    table.append(mean_row)
+    column_formats = "r" + "S" * len(fmm_and_qbx_order_pairs)
+    print_table(
+            table,
+            headers,
+            f"complexity-green-errors-{scheme_name}.tex",
+            column_formats)
+
+# }}}
+
+
+# {{{ complexity comparison table
+
+def generate_complexity_comparison_table(
+        input_files, input_labels, comparison_columns, comparison_labels,
+        perf_labeling, scheme_name):
+    rows_by_arms = {}
+
+    for infile in input_files:
+        for row in csv.DictReader(infile):
+            n_arms = int(row["n_arms"])
+            if n_arms not in rows_by_arms:
+                rows_by_arms[n_arms] = []
+            result = rows_by_arms[n_arms]
+            value = sum(
+                    int(val) for key, val in row.items()
+                    if key in perf_labeling.perf_features
+                    + perf_labeling.silent_summed_features)
+            result.append(str(value))
+
+    for numerator_col, denominator_col in comparison_columns:
+        for n_arms in rows_by_arms:
+            row = rows_by_arms[n_arms]
+            row.append("%.3f" % (int(row[numerator_col]) / int(row[denominator_col])))
+
+    table = []
+    headers = ["$n$"] + list(input_labels) + list(comparison_labels)
+
+    for n_arms in sorted(rows_by_arms):
+        row = [str(n_arms)] + rows_by_arms[n_arms]
+        table.append(row)
+
+    ncols = 1 + len(input_labels) + len(comparison_labels)
+    column_formats = "r" * ncols
+    print_table(
+            table,
+            headers,
+            f"complexity-summary-{scheme_name}.tex",
+            column_formats)
 
 # }}}
 
@@ -595,43 +684,88 @@ EXPERIMENTS = (
 
 
 def main():
+    """
+    # Green error tables
     with open_data_file("green-error-results-gigaqbx.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="gigaqbx")
 
     with open_data_file("green-error-results-qbxfmm.csv", newline="") as infile:
         generate_green_error_table(infile, scheme_name="qbxfmm")
 
-    """
-    with open_data_file("green-error-results-gigaqbx-25.csv", newline="") as infile_green,\
+    # BVP error table
+    with open_data_file("bvp-green-error-results-gigaqbx.csv", newline="") as infile_green,\
             open_data_file("bvp-results.csv", newline="") as infile_bvp:
         generate_bvp_error_table(infile_bvp, infile_green)
 
+    # Particle distributions table
     with open_data_file("particle-distributions.csv", newline="") as infile:
         generate_particle_distribution_table(infile)
+
+    # Complexity result graphs
+    complexity_results_gigaqbx = (
+            "complexity-results-fmm7-qbx3-gigaqbx-threshold15.csv",
+            "complexity-results-fmm15-qbx7-gigaqbx-threshold15.csv"
+    )
+
+    with contextlib.ExitStack() as stack:
+        input_files = [
+                stack.enter_context(open_data_file(fname, newline=""))
+                for fname in complexity_results_gigaqbx]
+        input_order_pairs = [(7, 3), (15, 7)]
+        generate_complexity_figure(
+                input_files, input_order_pairs, use_gigaqbx_fmm=True)
+
+    complexity_results_qbxfmm = (
+            "complexity-results-fmm15-qbx3-qbxfmm-threshold15.csv",
+            "complexity-results-fmm30-qbx7-qbxfmm-threshold15.csv"
+    )
+
+    with contextlib.ExitStack() as stack:
+        input_files = [
+                stack.enter_context(open_data_file(fname, newline=""))
+                for fname in complexity_results_gigaqbx]
+        input_order_pairs = [(15, 3), (30, 7)]
+        generate_complexity_figure(
+                input_files, input_order_pairs, use_gigaqbx_fmm=False)
     """
 
     """
-    with open_data_file("complexity-results-fmm7-qbx3-gigaqbx.csv", newline="") as infile_fmm7_qbx3,\
-             open_data_file("complexity-results-fmm15-qbx10-gigaqbx.csv", newline="") as infile_fmm15_qbx10:
-        input_files = (infile_fmm7_qbx3, infile_fmm15_qbx10)
-        input_order_pairs = ((7, 3), (15, 10))
-        generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm=True)
+    # Green errors for complexity experiment
+    with open_data_file("complexity-green-error-results-gigaqbx.csv", newline="") as infile:
+        generate_green_error_summary_table(infile, ((7, 3), (15, 7)), scheme_name="gigaqbx")
+
+    with open_data_file("complexity-green-error-results-qbxfmm.csv", newline="") as infile:
+        generate_green_error_summary_table(infile, ((15, 3), (30, 7)), scheme_name="qbxfmm")
     """
 
-    with open_data_file("complexity-results-fmm15-qbx3-qbxfmm.csv", newline="") as infile_fmm15_qbx3,\
-             open_data_file("complexity-results-fmm30-qbx7-qbxfmm.csv", newline="") as infile_fmm30_qbx7:
-        input_files = (infile_fmm15_qbx3, infile_fmm30_qbx7)
-        input_order_pairs = ((15, 3), (30, 7))
-        generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm=False)
+    # Effect of threshold on operation counts
+    complexity_comparison_fmm15_qbx3_input_files = (
+            "complexity-results-fmm7-qbx3-gigaqbx-threshold0.csv",
+            "complexity-results-fmm7-qbx3-gigaqbx-threshold15.csv",
+    )
 
-    # run(run_complexity_experiment, use_gigaqbx_fmm=True, compute_wall_times=False)
-    # run(run_complexity_experiment, use_gigaqbx_fmm=False)
-    # run(run_from_sep_smaller_threshold_complexity_experiment)
+    with contextlib.ExitStack() as stack:
+        input_files = [
+                stack.enter_context(open_data_file(fname, newline=""))
+                for fname in complexity_comparison_fmm15_qbx3_input_files]
+        generate_complexity_comparison_table(
+                input_files, ("t_{0}", "t_{15}"), ((1, 0),), ("t_{15} / t_0",),
+                GigaQBXPerfLabeling, "fmm15-qbx3-gigaqbx-threshold0-vs-threshold15")
 
-    # run(run_wall_time_experiment, use_gigaqbx_fmm=True)
-    # run(run_wall_time_experiment, use_gigaqbx_fmm=False)
-    # run(run_level_restriction_experiment)
+    complexity_comparison_fmm15_qbx7_input_files = (
+            "complexity-results-fmm15-qbx7-gigaqbx-threshold0.csv",
+            "complexity-results-fmm15-qbx7-gigaqbx-threshold15.csv",
+    )
 
+    with contextlib.ExitStack() as stack:
+        input_files = [
+                stack.enter_context(open_data_file(fname, newline=""))
+                for fname in complexity_comparison_fmm15_qbx7_input_files]
+        generate_complexity_comparison_table(
+                input_files, ("t_{0}", "t_{15}"), ((1, 0),), ("t_{15} / t_0",),
+                GigaQBXPerfLabeling, "fmm15-qbx7-gigaqbx-threshold0-vs-threshold15")
+
+    # Wall times for evaluating the SLP
 
 if __name__ == "__main__":
     main()

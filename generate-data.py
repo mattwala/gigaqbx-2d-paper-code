@@ -708,6 +708,7 @@ STAGES = (
         "form_global_qbx_locals_list1",
         "form_global_qbx_locals_list3",
         "form_global_qbx_locals_list4",
+        "translate_box_multipoles_to_qbx_local",
         "translate_box_local_to_qbx_local",
         "eval_qbx_expansions")
 
@@ -867,7 +868,8 @@ def run_experiments(experiments):
     # separately created contexts.)
     multiprocessing.set_start_method("spawn")
 
-    # Wall time
+    # Wall time (should be run before os.nice(1) is called below, because
+    # the purposes of these experiments is to measure the performance)
     if "wall-time" in experiments:
         run_wall_time_experiment(use_gigaqbx_fmm=True)
         run_wall_time_experiment(use_gigaqbx_fmm=False)
@@ -949,6 +951,53 @@ def main():
     experiments -= set(result.run_except)
 
     run_experiments(experiments)
+=======
+    """
+    run_wall_time_experiment(use_gigaqbx_fmm=True)
+
+    run_wall_time_experiment(use_gigaqbx_fmm=False)
+    """
+
+    # Be nice to other users on the machine.
+    os.nice(1)
+
+    # Green error experiment (Tables 3 and 4 in the paper)
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
+                               label="green-error")
+
+    run_green_error_experiment(use_gigaqbx_fmm=False,
+                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
+                               label="green-error")
+
+    # BVP error (Table 5 in the paper)
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               params=BVP_EXPERIMENT_GREEN_ERROR_PARAMS,
+                               label="bvp-green-error")
+
+    run_bvp_experiment()
+
+    # Particle distributions (Table 6 in the paper)
+    run_particle_distributions_experiment()
+
+    # Complexity (Figures 14 and 15 in the paper)
+    run_complexity_experiment(use_gigaqbx_fmm=True)
+
+    run_complexity_experiment(use_gigaqbx_fmm=False)
+
+    # Green errors associated with complexity (reported in Figures 14, 15, and
+    # Section 5.2.2 in the paper)
+    run_green_error_experiment(use_gigaqbx_fmm=True,
+                               params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
+                               label="complexity-green-error")
+
+    run_green_error_experiment(use_gigaqbx_fmm=False,
+                               params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
+                               label="complexity-green-error")
+    
+    # From-sep-smaller threshold impact (reported in Section 5.2.2 in the paper)
+    run_from_sep_smaller_threshold_complexity_experiment()
+>>>>>>> Stashed changes
 
 
 if __name__ == "__main__":
