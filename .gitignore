@@ -3,7 +3,7 @@ raw-data/
 out/
 src/
 .miniconda2/
-Miniconda2-4.7.10-MacOSX-x86_64.sh
+Miniconda2-*-x86_64.sh
 *.aux
 *.lof
 *.log

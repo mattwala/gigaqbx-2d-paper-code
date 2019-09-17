@@ -26,7 +26,7 @@ else
     bash $MINICONDA_INSTALL_SH -b -p "$MINICONDA_INSTALL_DIR"
 
     # Install software
-    PATH="$MINICONDA_INSTALL_DIR/bin:$PATH" conda create --name inteq --file ${SPEC_FILE}
+    PATH="$MINICONDA_INSTALL_DIR/bin:$PATH" conda create --yes --name inteq --file ${SPEC_FILE}
     source "$MINICONDA_INSTALL_DIR/bin/activate" inteq
     pip install -r env/requirements.txt
 fi
