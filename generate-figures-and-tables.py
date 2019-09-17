@@ -842,7 +842,7 @@ def gen_figures_and_tables(experiments):
 
 def main():
     names = ["'%s'" % name for name in EXPERIMENTS]
-    names[-1] = " and " + names[-1]
+    names[-1] = "and " + names[-1]
 
     description = (
             "This script postprocesses results for one or more experiments. "

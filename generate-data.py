@@ -925,7 +925,7 @@ def run_experiments(experiments):
 
 def main():
     names = ["'%s'" % name for name in EXPERIMENTS]
-    names[-1] = " and " + names[-1]
+    names[-1] = "and " + names[-1]
 
     description = (
             "This script collects data from one or more experiments. "
