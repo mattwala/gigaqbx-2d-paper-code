@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import contextlib
 import csv
 import logging
@@ -11,12 +12,8 @@ import numpy as np
 GENERATE_PDF = True
 
 
-def switch_matplotlib_to_agg():
-    import matplotlib
-    matplotlib.use("pgf")
-
-
-switch_matplotlib_to_agg()
+import matplotlib  # noqa
+matplotlib.use("pgf")
 import matplotlib.pyplot as plt  # noqa
 
 
@@ -31,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def initialize_matplotlib():
     plt.rc("font", family="serif")
-    plt.rc("text", usetex=True)
+    plt.rc("text", usetex=False)
     # https://stackoverflow.com/questions/40424249/vertical-alignment-of-matplotlib-legend-labels-with-latex-math
     plt.rc(("text.latex",), preview=True)
     plt.rc("xtick", labelsize=FONTSIZE)
@@ -127,7 +124,8 @@ def generate_green_error_table(infile, scheme_name):
         results_l2[fmm_order, qbx_order] = float(row["err_l2"])
         results_linf[fmm_order, qbx_order] = float(row["err_linf"])
 
-    fmm_orders = sorted(fmm_orders, key=lambda order: -1 if order == "inf" else order)
+    fmm_orders = sorted(
+            fmm_orders, key=lambda order: -1 if order == "inf" else order)
     qbx_orders = sorted(qbx_orders)
 
     # {{{ generate convergence data
@@ -191,10 +189,12 @@ def generate_green_error_table(infile, scheme_name):
 
     # }}}
 
-    print_table(table_l2, headers, f"green-error-l2-{scheme_name}.tex",
-                column_formats)
-    print_table(table_linf, headers, f"green-error-linf-{scheme_name}.tex",
-                column_formats)
+    print_table(
+            table_l2, headers, f"green-error-l2-{scheme_name}.tex",
+            column_formats)
+    print_table(
+            table_linf, headers, f"green-error-linf-{scheme_name}.tex",
+            column_formats)
 
 # }}}
 
@@ -273,7 +273,9 @@ def generate_bvp_error_table(infile_bvp, infile_green):
         "S[table-format = 1e-1, round-precision = 0]",
         "c"] + ["S", "c"] * len(qbx_orders))
 
-    def build_table(bvp_errors, converged_bvp_errors, green_errors, converged_green_errors):
+    def build_table(
+            bvp_errors, converged_bvp_errors, green_errors,
+            converged_green_errors):
         table = []
 
         for p in fmm_orders:
@@ -299,11 +301,13 @@ def generate_bvp_error_table(infile_bvp, infile_green):
 
         return table
 
-    table_l2 = build_table(bvp_error_l2, converged_bvp_error_l2, green_error_l2,
-                           converged_green_error_l2)
+    table_l2 = build_table(
+            bvp_error_l2, converged_bvp_error_l2, green_error_l2,
+            converged_green_error_l2)
 
-    table_linf = build_table(bvp_error_linf, converged_bvp_error_linf,
-                             green_error_linf, converged_green_error_linf)
+    table_linf = build_table(
+            bvp_error_linf, converged_bvp_error_linf,
+            green_error_linf, converged_green_error_linf)
 
     print_table(table_l2, headers, "bvp-l2.tex", column_formats)
     print_table(table_linf, headers, "bvp-linf.tex", column_formats)
@@ -332,7 +336,8 @@ def generate_particle_distribution_table(infile):
                 "%.1f" % float(entry["avg"]),
                 ]
         row.extend(
-                "%.1f" % float(entry["percentile_%d" % pct]) for pct in PERCENTILES)
+                "%.1f" % float(entry["percentile_%d" % pct])
+                for pct in PERCENTILES)
         rows.append(row)
 
     rows.sort(key=lambda row: int(row[0]))
@@ -345,7 +350,8 @@ def generate_particle_distribution_table(infile):
             ] + [
                 r"\cellcenter{%d\%%}" % pct for pct in PERCENTILES])
 
-    print_table(rows, headers, "particle-distributions.tex", "r" * len(rows[0]))
+    print_table(
+            rows, headers, "particle-distributions.tex", "r" * len(rows[0]))
 
 # }}}
 
@@ -356,13 +362,13 @@ _colors = plt.cm.Paired.colors  # pylint:disable=no-member
 
 
 class Colors(object):
-    LIGHT_BLUE  = _colors[0]
-    BLUE        = _colors[1]
+    LIGHT_BLUE = _colors[0]
+    BLUE = _colors[1]
     LIGHT_GREEN = _colors[2]
-    GREEN       = _colors[3]
-    RED         = _colors[5]
-    ORANGE      = _colors[7]
-    PURPLE      = _colors[9]
+    GREEN = _colors[3]
+    RED = _colors[5]
+    ORANGE = _colors[7]
+    PURPLE = _colors[9]
 
 
 class QBXPerfLabelingBase(object):
@@ -377,7 +383,7 @@ class QBXPerfLabelingBase(object):
             "translate_box_local_to_qbx_local",
             "eval_qbx_expansions",
             )
-    
+
     perf_line_styles = ("x-", "+-", ".-", "*-", "s-", "d-")
 
     summary_line_style = ".--"
@@ -435,20 +441,24 @@ class QBXFMMPerfLabeling(QBXPerfLabelingBase):
             Colors.PURPLE,
             Colors.BLUE,
             Colors.GREEN)
-    
 
-def generate_complexity_figure(input_files, input_order_pairs, use_gigaqbx_fmm):
+
+def generate_complexity_figure(input_file, input_order_pairs, use_gigaqbx_fmm):
     subtitles = []
     for fmm_order, qbx_order in input_order_pairs:
         subtitles.append(rf"$pqbx = {qbx_order}$, $pfmm = {fmm_order}")
 
     labeling = GigaQBXPerfLabeling if use_gigaqbx_fmm else QBXFMMPerfLabeling
 
-    x_values = [[] for _ in range(len(input_files))]
-    y_values = [[] for _ in range(len(input_files))]
+    x_values = [[] for _ in range(len(input_order_pairs))]
+    y_values = [[] for _ in range(len(input_order_pairs))]
 
-    for i, input_file in enumerate(input_files):
-        for row in csv.DictReader(input_file):
+    rows = list(csv.DictReader(input_file))
+
+    for i, order_pair in enumerate(input_order_pairs):
+        for row in rows:
+            if (int(row["fmm_order"]), int(row["qbx_order"])) != order_pair:
+                continue
             x_values[i].append(int(row["nparticles"]))
             result = {}
             for key in row:
@@ -479,11 +489,11 @@ def initialize_axes(ax, title, xlabel=None, ylabel=None, grid_axes=None):
     ax.grid(lw=LINEWIDTH / 2, which="major", axis=grid_axes)
 
 
-def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
-                          xlabel, name, ylimits=None, size_inches=None,
-                          subplots_adjust=None, plot_title=None,
-                          plot_kind="loglog", postproc_func=None,
-                          summary_labels=None, grid_axes=None):
+def make_complexity_figure(
+        subtitles, x_values, y_values, labeling, ylabel,
+        xlabel, name, ylimits=None, size_inches=None, subplots_adjust=None,
+        plot_title=None, plot_kind="loglog", postproc_func=None,
+        summary_labels=None, grid_axes=None):
     """Generate a figure with *n* subplots
 
     Parameters:
@@ -517,7 +527,8 @@ def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
     for iax, (ax, axtitle) in enumerate(zip(axes, subtitles)):
         if iax > 0:
             ylabel = None
-        initialize_axes(ax, axtitle, xlabel=xlabel, ylabel=ylabel, grid_axes=grid_axes)
+        initialize_axes(
+                ax, axtitle, xlabel=xlabel, ylabel=ylabel, grid_axes=grid_axes)
 
     # Generate results.
     for xs, ys, lim, ax in zip(x_values, y_values, ylimits, axes):
@@ -542,17 +553,20 @@ def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
                 labeling.perf_line_styles,
                 labeling.perf_colors):
             ylist = [y[feature] for y in ys]
-            l, = plotter(xs, ylist, style, color=color, label=label, **plot_options)
+            l, = plotter(
+                    xs, ylist, style,
+                    color=color, label=label, **plot_options)
             labels.append(l)
 
         summary_values = [
                 sum(val for key, val in y.items()
-                    if key in
-                        labeling.perf_features + labeling.silent_summed_features)
+                    if key in labeling.perf_features
+                    + labeling.silent_summed_features)
                 for y in ys]
 
         # summary
-        l, = plotter(xs,
+        l, = plotter(
+                xs,
                 summary_values,
                 labeling.summary_line_style,
                 label=labeling.summary_label,
@@ -594,7 +608,8 @@ def make_complexity_figure(subtitles, x_values, y_values, labeling, ylabel,
 
 # {{{ green error summary table
 
-def generate_green_error_summary_table(infile, fmm_and_qbx_order_pairs, scheme_name):
+def generate_green_error_summary_table(
+        infile, fmm_and_qbx_order_pairs, scheme_name):
     rows_by_arms = {}
 
     for row in csv.DictReader(infile):
@@ -635,13 +650,17 @@ def generate_green_error_summary_table(infile, fmm_and_qbx_order_pairs, scheme_n
 # {{{ complexity comparison table
 
 def generate_complexity_comparison_table(
-        input_files, input_labels, comparison_columns, comparison_labels,
-        perf_labeling, scheme_name):
+        input_files, order_pair, input_labels, comparison_columns,
+        comparison_labels, perf_labeling, scheme_name):
     rows_by_arms = {}
 
     for infile in input_files:
         for row in csv.DictReader(infile):
             n_arms = int(row["n_arms"])
+            fmm_order = int(row["fmm_order"])
+            qbx_order = int(row["qbx_order"])
+            if (fmm_order, qbx_order) != order_pair:
+                continue
             if n_arms not in rows_by_arms:
                 rows_by_arms[n_arms] = []
             result = rows_by_arms[n_arms]
@@ -654,7 +673,8 @@ def generate_complexity_comparison_table(
     for numerator_col, denominator_col in comparison_columns:
         for n_arms in rows_by_arms:
             row = rows_by_arms[n_arms]
-            row.append("%.3f" % (int(row[numerator_col]) / int(row[denominator_col])))
+            row.append("%.3f" % (
+                    int(row[numerator_col]) / int(row[denominator_col])))
 
     table = []
     headers = ["$n$"] + list(input_labels) + list(comparison_labels)
@@ -674,6 +694,53 @@ def generate_complexity_comparison_table(
 # }}}
 
 
+# {{{ wall time comparison table
+
+def generate_wall_time_comparison_table(
+        input_files, order_pairs, input_labels, comparison_columns,
+        comparison_labels, scheme_name):
+    rows_by_arms = {}
+
+    for i, infile, order_pair in enumerate(zip(input_files, order_pairs)):
+        for row in csv.DictReader(infile):
+            n_arms = int(row["n_arms"])
+            fmm_order = int(row["fmm_order"])
+            qbx_order = int(row["qbx_order"])
+            if (fmm_order, qbx_order) != order_pair:
+                continue
+            if n_arms not in rows_by_arms:
+                rows_by_arms[n_arms] = [[] for _ in range(len(input_files))]
+            result = rows_by_arms[n_arms][i]
+            result.append(float(row["time"]))
+
+    for n_arms in rows_by_arms:
+        row = rows_by_arms[n_arms]
+        row[:] = ["%.1f" % np.mean(times) for times in row]
+
+    for numerator_col, denominator_col in comparison_columns:
+        for n_arms in rows_by_arms:
+            row = rows_by_arms[n_arms]
+            row.append("%.3f" % (
+                    int(row[numerator_col]) / int(row[denominator_col])))
+
+    table = []
+    headers = ["$n$"] + list(input_labels) + list(comparison_labels)
+
+    for n_arms in sorted(rows_by_arms):
+        row = [str(n_arms)] + rows_by_arms[n_arms]
+        table.append(row)
+
+    ncols = 1 + len(input_labels) + len(comparison_labels)
+    column_formats = "r" * ncols
+    print_table(
+            table,
+            headers,
+            f"wall-time-summary-{scheme_name}.tex",
+            column_formats)
+
+# }}}
+
+
 EXPERIMENTS = (
         "wall-time",
         "green-error",
@@ -683,89 +750,142 @@ EXPERIMENTS = (
         "from-sep-smaller-threshold")
 
 
-def main():
-    """
-    # Green error tables
-    with open_data_file("green-error-results-gigaqbx.csv", newline="") as infile:
-        generate_green_error_table(infile, scheme_name="gigaqbx")
+def gen_figures_and_tables(experiments):
+    from functools import partial
+    my_open = partial(open_data_file, newline="")
 
-    with open_data_file("green-error-results-qbxfmm.csv", newline="") as infile:
-        generate_green_error_table(infile, scheme_name="qbxfmm")
+    # Wall time comparison
+    if "wall-time" in experiments:
+        wall_time_comparison_files = (
+                "wall-time-results-qbxfmm.csv",
+                "wall-time-results-gigaqbx.csv",
+        )
+
+        for order_pairs in (((15, 3), (7, 3)), ((30, 7), (15, 7))):
+            with contextlib.ExitStack() as stack:
+                input_files = [
+                        stack.enter_context(my_open(fname))
+                        for fname in wall_time_comparison_files]
+                generate_wall_time_comparison_table(
+                        input_files=input_files,
+                        order_pairs=order_pairs,
+                        input_labels=("t_\text{qbxfmm}", "t_\text{giga}"),
+                        comparison_columns=((1, 0),),
+                        comparison_labels=("t_\text{giga} / t_\text{qbxfmm}",),
+                        scheme_name="qbx%d" % order_pairs[0][1])
+
+    # Green error tables
+    if "green-error" in experiments:
+        with my_open("green-error-results-gigaqbx.csv") as infile:
+            generate_green_error_table(infile, scheme_name="gigaqbx")
+        with my_open("green-error-results-qbxfmm.csv") as infile:
+            generate_green_error_table(infile, scheme_name="qbxfmm")
 
     # BVP error table
-    with open_data_file("bvp-green-error-results-gigaqbx.csv", newline="") as infile_green,\
-            open_data_file("bvp-results.csv", newline="") as infile_bvp:
-        generate_bvp_error_table(infile_bvp, infile_green)
+    if "bvp" in experiments:
+        with my_open("bvp-green-error-results-gigaqbx.csv") as infile_green,\
+                my_open("bvp-results.csv") as infile_bvp:
+            generate_bvp_error_table(infile_bvp, infile_green)
 
     # Particle distributions table
-    with open_data_file("particle-distributions.csv", newline="") as infile:
-        generate_particle_distribution_table(infile)
+    if "particle-distributions" in experiments:
+        with my_open("particle-distributions.csv") as infile:
+            generate_particle_distribution_table(infile)
 
     # Complexity result graphs
-    complexity_results_gigaqbx = (
-            "complexity-results-fmm7-qbx3-gigaqbx-threshold15.csv",
-            "complexity-results-fmm15-qbx7-gigaqbx-threshold15.csv"
-    )
+    if "complexity" in experiments:
+        with my_open("complexity-results-gigaqbx-threshold15.csv")\
+                as input_file:
+            input_order_pairs = [(7, 3), (15, 7)]
+            generate_complexity_figure(
+                    input_file, input_order_pairs, use_gigaqbx_fmm=True)
 
-    with contextlib.ExitStack() as stack:
-        input_files = [
-                stack.enter_context(open_data_file(fname, newline=""))
-                for fname in complexity_results_gigaqbx]
-        input_order_pairs = [(7, 3), (15, 7)]
-        generate_complexity_figure(
-                input_files, input_order_pairs, use_gigaqbx_fmm=True)
+        with my_open("complexity-results-qbxfmm-threshold15.csv")\
+                as input_file:
+            input_order_pairs = [(15, 3), (30, 7)]
+            generate_complexity_figure(
+                    input_file, input_order_pairs, use_gigaqbx_fmm=False)
 
-    complexity_results_qbxfmm = (
-            "complexity-results-fmm15-qbx3-qbxfmm-threshold15.csv",
-            "complexity-results-fmm30-qbx7-qbxfmm-threshold15.csv"
-    )
+        # Green error summaries for complexity experiment
+        with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
+            generate_green_error_summary_table(
+                    infile, ((7, 3), (15, 7)), scheme_name="gigaqbx")
 
-    with contextlib.ExitStack() as stack:
-        input_files = [
-                stack.enter_context(open_data_file(fname, newline=""))
-                for fname in complexity_results_gigaqbx]
-        input_order_pairs = [(15, 3), (30, 7)]
-        generate_complexity_figure(
-                input_files, input_order_pairs, use_gigaqbx_fmm=False)
-    """
-
-    """
-    # Green errors for complexity experiment
-    with open_data_file("complexity-green-error-results-gigaqbx.csv", newline="") as infile:
-        generate_green_error_summary_table(infile, ((7, 3), (15, 7)), scheme_name="gigaqbx")
-
-    with open_data_file("complexity-green-error-results-qbxfmm.csv", newline="") as infile:
-        generate_green_error_summary_table(infile, ((15, 3), (30, 7)), scheme_name="qbxfmm")
-    """
+        with my_open("complexity-green-error-results-qbxfmm.csv") as infile:
+            generate_green_error_summary_table(
+                    infile, ((15, 3), (30, 7)), scheme_name="qbxfmm")
 
     # Effect of threshold on operation counts
-    complexity_comparison_fmm15_qbx3_input_files = (
-            "complexity-results-fmm7-qbx3-gigaqbx-threshold0.csv",
-            "complexity-results-fmm7-qbx3-gigaqbx-threshold15.csv",
-    )
+    if "from-sep-smaller-threshold" in experiments:
+        complexity_comparison_files = (
+                "complexity-results-gigaqbx-threshold0.csv",
+                "complexity-results-gigaqbx-threshold15.csv",
+        )
 
-    with contextlib.ExitStack() as stack:
-        input_files = [
-                stack.enter_context(open_data_file(fname, newline=""))
-                for fname in complexity_comparison_fmm15_qbx3_input_files]
-        generate_complexity_comparison_table(
-                input_files, ("t_{0}", "t_{15}"), ((1, 0),), ("t_{15} / t_0",),
-                GigaQBXPerfLabeling, "fmm15-qbx3-gigaqbx-threshold0-vs-threshold15")
+        for order_pair in ((7, 3), (15, 7)):
+            with contextlib.ExitStack() as stack:
+                input_files = [
+                        stack.enter_context(open_data_file(fname, newline=""))
+                        for fname in complexity_comparison_files]
+                scheme_name = (
+                        "fmm%d-qbx%d-gigaqbx-threshold0-vs-threshold15"
+                        % order_pair)
+                generate_complexity_comparison_table(
+                        input_files,
+                        order_pair=order_pair,
+                        input_labels=("t_{0}", "t_{15}"),
+                        comparison_columns=((1, 0),),
+                        comparison_labels=("t_{15} / t_0",),
+                        perf_labeling=GigaQBXPerfLabeling,
+                        scheme_name=scheme_name)
 
-    complexity_comparison_fmm15_qbx7_input_files = (
-            "complexity-results-fmm15-qbx7-gigaqbx-threshold0.csv",
-            "complexity-results-fmm15-qbx7-gigaqbx-threshold15.csv",
-    )
 
-    with contextlib.ExitStack() as stack:
-        input_files = [
-                stack.enter_context(open_data_file(fname, newline=""))
-                for fname in complexity_comparison_fmm15_qbx7_input_files]
-        generate_complexity_comparison_table(
-                input_files, ("t_{0}", "t_{15}"), ((1, 0),), ("t_{15} / t_0",),
-                GigaQBXPerfLabeling, "fmm15-qbx7-gigaqbx-threshold0-vs-threshold15")
+def main():
+    names = ["'%s'" % name for name in EXPERIMENTS]
+    names[-1] = " and " + names[-1]
 
-    # Wall times for evaluating the SLP
+    description = (
+            "This script postprocesses results for one or more experiments. "
+            " The names of the experiments are: " + ", ".join(names)
+            + ".")
+
+    parser = argparse.ArgumentParser(description=description)
+
+    parser.add_argument(
+            "-x",
+            metavar="experiment-name",
+            action="append",
+            dest="experiments",
+            default=[],
+            help="Postprocess results for an experiment "
+                 "(may be specified multiple times)")
+
+    parser.add_argument(
+            "--all",
+            action="store_true",
+            dest="run_all",
+            help="Postprocess results for all available experiments")
+
+    parser.add_argument(
+            "--except",
+            action="append",
+            metavar="experiment-name",
+            dest="run_except",
+            default=[],
+            help="Do not postprocess results for an experiment "
+                 "(may be specified multiple times)")
+
+    result = parser.parse_args()
+
+    experiments = set()
+
+    if result.run_all:
+        experiments = set(EXPERIMENTS)
+    experiments |= set(result.experiments)
+    experiments -= set(result.run_except)
+
+    gen_figures_and_tables(experiments)
+
 
 if __name__ == "__main__":
     main()

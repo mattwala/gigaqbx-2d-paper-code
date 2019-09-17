@@ -12,14 +12,12 @@ import numpy.linalg as la
 import pyopencl as cl
 import pyopencl.clmath  # noqa
 
-from boxtree.area_query import AreaQueryElementwiseTemplate
 from functools import partial
 from itertools import product
 from meshmode.mesh.generation import (  # noqa
         ellipse, cloverleaf, NArmedStarfish, drop, n_gon, qbx_peanut,
         WobblyCircle, make_curve_mesh, starfish)
 from pytential import bind, sym, norm
-from pytools import memoize
 
 
 logging.basicConfig(level=logging.INFO)
@@ -40,10 +38,7 @@ def make_output_file(filename, **flags):
 TARGET_ORDER = 8
 OVSMP_FACTOR = 4
 PANELS_PER_ARM = 50
-if 0:
-    ARMS = [3, 4, 5]
-else:
-    ARMS = list(range(5, 70, 10))
+ARMS = list(range(5, 70, 10))
 TCF = 0.9
 DEFAULT_GIGAQBX_BACKEND = "fmmlib"
 DEFAULT_QBXFMM_BACKEND = "fmmlib"
@@ -103,14 +98,14 @@ COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS = [
         GreenErrorParams(n_arms, fmm_order, qbx_order)
         for n_arms in COMPLEXITY_EXPERIMENT_N_ARMS_LIST
         for fmm_order, qbx_order
-            in COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS]
+        in COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS]
 
 COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS = [(15, 3), (30, 7)]
 COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS = [
         GreenErrorParams(n_arms, fmm_order, qbx_order)
         for n_arms in COMPLEXITY_EXPERIMENT_N_ARMS_LIST
         for fmm_order, qbx_order
-            in COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS]
+        in COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS]
 
 # }}}
 
@@ -203,6 +198,8 @@ def get_lpot_source(queue, mesh_getter, nelements,
             target_association_tolerance=1e-3,
             fmm_order=10, qbx_order=10,
             _from_sep_smaller_min_nsources_cumul=from_sep_smaller_threshold,
+            _from_sep_smaller_crit="static_linf",
+            _box_extent_norm="linf",
             )
 
     lpot_source, _ = lpot_source.with_refinement(**refiner_extra_kwargs)
@@ -371,7 +368,7 @@ def _green_error_experiment_body(use_gigaqbx_fmm, params):
 
 # {{{ bvp experiment
 
-def get_bvp_error(lpot_source, fmm_order, qbx_order, k=0, time=None):
+def get_bvp_error(lpot_source, fmm_order, qbx_order, k=0):
     # This returns a tuple (err_l2, err_linf, nit).
     queue = cl.CommandQueue(lpot_source.cl_context)
 
@@ -489,7 +486,6 @@ BVP_FIELDS = ("fmm_order", "qbx_order", "err_l2", "err_linf", "gmres_nit")
 
 
 def run_bvp_experiment():
-    from itertools import product
     fmm_orders = BVP_EXPERIMENT_FMM_ORDERS
     qbx_orders = BVP_EXPERIMENT_QBX_ORDERS
 
@@ -520,7 +516,8 @@ def _bvp_experiment_body(fmm_and_qbx_order_pair):
     cl_ctx = cl.create_some_context(interactive=False)
 
     fmm_order, qbx_order = fmm_and_qbx_order_pair
-    lpot_source = get_geometry(cl_ctx, BVP_EXPERIMENT_N_ARMS, use_gigaqbx_fmm=True)
+    lpot_source = (
+            get_geometry(cl_ctx, BVP_EXPERIMENT_N_ARMS, use_gigaqbx_fmm=True))
 
     print("#" * 80)
     print("BVP fmm_order %d, qbx_order %d" % (fmm_order, qbx_order))
@@ -558,7 +555,8 @@ def run_particle_distributions_experiment():
                 ncenters=ncenters,
                 avg=FLOAT_OUTPUT_FMT % np.mean(neighborhood_sizes))
 
-        percentiles = np.percentile(neighborhood_sizes,
+        percentiles = np.percentile(
+                neighborhood_sizes,
                 PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES)
 
         for pct, val in zip(
@@ -584,9 +582,11 @@ class GigaQBXPaperTranslationCostModel(object):
     def __init__(self, dim, nlevels):
         from pymbolic import var
         p_qbx = var("p_qbx")
-        p_fmm_by_level = np.array([var("p_fmm_lev%d" % i) for i in range(nlevels)])
+        p_fmm_by_level = np.array(
+                [var("p_fmm_lev%d" % i) for i in range(nlevels)])
 
-        # Note: This means order n is modeled as having n coeffs in 2D, instead of (n + 1) coeffs.
+        # Note: This means order n is modeled as having n coeffs in 2D, instead
+        # of (n + 1) coeffs.
         # This is consistent with the model in the 2D paper.
         self.ncoeffs_fmm_by_level = p_fmm_by_level ** (dim - 1)
         self.ncoeffs_qbx = p_qbx ** (dim - 1)
@@ -669,9 +669,12 @@ def get_fmm_cost(lpot_source):
     inspect_geo_data_result = []
 
     def inspect_geo_data(insn, bound_expr, geo_data):
+        del bound_expr
+
         from pytential.qbx.cost import CostModel
         cost_model = CostModel(
-                translation_cost_model_factory=GigaQBXPaperTranslationCostModel,
+                translation_cost_model_factory=(
+                    GigaQBXPaperTranslationCostModel),
                 calibration_params=CONSTANT_ONE_PARAMS)
 
         kernel = lpot_source.get_fmm_kernel(insn.kernels)
@@ -713,14 +716,16 @@ STAGES = (
         "eval_qbx_expansions")
 
 
-COMPLEXITY_FIELDS = ("n_arms", "nparticles") + STAGES
+COMPLEXITY_FIELDS = ("n_arms", "nparticles", "fmm_order", "qbx_order") + STAGES
 
 
 def run_complexity_experiment(use_gigaqbx_fmm):
-    _get_complexity_experiment_results(use_gigaqbx_fmm, from_sep_smaller_threshold=15)
+    _get_complexity_experiment_results(
+            use_gigaqbx_fmm, from_sep_smaller_threshold=15)
 
 
-def _get_complexity_experiment_results(use_gigaqbx_fmm, from_sep_smaller_threshold):
+def _get_complexity_experiment_results(
+        use_gigaqbx_fmm, from_sep_smaller_threshold):
     with multiprocessing.Pool(POOL_WORKERS) as pool:
         results = pool.map(
                 partial(
@@ -731,18 +736,20 @@ def _get_complexity_experiment_results(use_gigaqbx_fmm, from_sep_smaller_thresho
 
     fmm_and_qbx_order_pairs = (
             COMPLEXITY_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS
-            if use_gigaqbx_fmm else COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS)
+            if use_gigaqbx_fmm
+            else COMPLEXITY_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS)
+
+    scheme_name = "gigaqbx" if use_gigaqbx_fmm else "qbxfmm"
+
+    outfile = make_output_file(
+            f"complexity-results-{scheme_name}"
+            f"-threshold{from_sep_smaller_threshold}.csv",
+            newline="")
+
+    writer = csv.DictWriter(outfile, COMPLEXITY_FIELDS)
+    writer.writeheader()
 
     for fmm_order, qbx_order in fmm_and_qbx_order_pairs:
-        scheme_name = "gigaqbx" if use_gigaqbx_fmm else "qbxfmm"
-        outfile = make_output_file(
-                f"complexity-results-fmm{fmm_order}-qbx{qbx_order}-{scheme_name}"
-                f"-threshold{from_sep_smaller_threshold}.csv",
-                newline="")
-
-        writer = csv.DictWriter(outfile, COMPLEXITY_FIELDS)
-        writer.writeheader()
-
         for n_arms, result in zip(COMPLEXITY_EXPERIMENT_N_ARMS_LIST, results):
             # Adjust QBX and FMM order params.
             new_params = result.params.copy()
@@ -754,14 +761,17 @@ def _get_complexity_experiment_results(use_gigaqbx_fmm, from_sep_smaller_thresho
             row = {}
             row["n_arms"] = n_arms
             row["nparticles"] = new_params["nsources"] + new_params["ntargets"]
+            row["fmm_order"] = fmm_order
+            row["qbx_order"] = fmm_order
             for stage in STAGES:
                 row[stage] = costs[stage]
             writer.writerow(row)
 
-        outfile.close()
+    outfile.close()
 
 
-def _complexity_experiment_body(use_gigaqbx_fmm, from_sep_smaller_threshold, n_arms):
+def _complexity_experiment_body(
+        use_gigaqbx_fmm, from_sep_smaller_threshold, n_arms):
     cl_ctx = cl.create_some_context(interactive=False)
     lpot_source = get_geometry(
             cl_ctx,
@@ -776,7 +786,8 @@ def _complexity_experiment_body(use_gigaqbx_fmm, from_sep_smaller_threshold, n_a
 # {{{ from_sep_smaller_threshold experiment
 
 def run_from_sep_smaller_threshold_complexity_experiment():
-    _get_complexity_experiment_results(use_gigaqbx_fmm=True, from_sep_smaller_threshold=0)
+    _get_complexity_experiment_results(
+            use_gigaqbx_fmm=True, from_sep_smaller_threshold=0)
 
 # }}}
 
@@ -790,14 +801,17 @@ def run_wall_time_experiment(use_gigaqbx_fmm):
     cl_ctx = cl.create_some_context(interactive=False)
 
     if use_gigaqbx_fmm:
-        fmm_and_qbx_orders = WALL_TIME_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS
+        fmm_and_qbx_orders = \
+                WALL_TIME_EXPERIMENT_GIGAQBX_FMM_AND_QBX_ORDER_PAIRS
     else:
-        fmm_and_qbx_orders = WALL_TIME_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS
-        
+        fmm_and_qbx_orders = \
+                WALL_TIME_EXPERIMENT_QBXFMM_FMM_AND_QBX_ORDER_PAIRS
+
     scheme_name = "gigaqbx" if use_gigaqbx_fmm else "qbxfmm"
-    
-    outfile = make_output_file(f"wall-time-results-{scheme_name}.csv", newline="")
-    
+
+    outfile = make_output_file(
+            f"wall-time-results-{scheme_name}.csv", newline="")
+
     writer = csv.DictWriter(outfile, WALL_TIME_EXPERIMENT_FIELDS)
     writer.writeheader()
 
@@ -808,7 +822,7 @@ def run_wall_time_experiment(use_gigaqbx_fmm):
             row = dict(n_arms=n_arms, fmm_order=fmm_order, qbx_order=qbx_order)
 
             wall_times = get_slp_wall_times(lpot_source, fmm_order, qbx_order)
-            for i, wall_time in enumerate(wall_times):
+            for wall_time in wall_times:
                 row[f"time"] = FLOAT_OUTPUT_FMT % wall_time
                 writer.writerow(row)
 
@@ -825,8 +839,7 @@ def get_slp_wall_times(lpot_source, fmm_order, qbx_order):
 
     u_sym = sym.var("u")
 
-    from sumpy.kernel import LaplaceKernel, HelmholtzKernel
-
+    from sumpy.kernel import LaplaceKernel
     S = sym.S(LaplaceKernel(d), u_sym, qbx_forced_limit=-1)
     density_discr = lpot_source.density_discr
 
@@ -841,7 +854,7 @@ def get_slp_wall_times(lpot_source, fmm_order, qbx_order):
     times = []
     from time import perf_counter as curr_time
 
-    for i in range(WALL_TIME_EXPERIMENT_TIMING_ROUNDS):
+    for _ in range(WALL_TIME_EXPERIMENT_TIMING_ROUNDS):
         t_start = curr_time()
         op(queue, u=u)
         t_end = curr_time()
@@ -862,19 +875,12 @@ EXPERIMENTS = (
 
 
 def run_experiments(experiments):
-    # Mixing calls to fork() with OpenCL context creation is a bad idea. This
-    # call makes it safe to create an OpenCL context in the main
-    # thread. (Workers spawned by multiprocessing always use their own
-    # separately created contexts.)
-    multiprocessing.set_start_method("spawn")
-
-    # Wall time (should be run before os.nice(1) is called below, because
-    # the purposes of these experiments is to measure the performance)
+    # Wall time experiment
     if "wall-time" in experiments:
         run_wall_time_experiment(use_gigaqbx_fmm=True)
         run_wall_time_experiment(use_gigaqbx_fmm=False)
 
-    # Green error
+    # Green error experiment (Tables 3 and 4 in the paper)
     if "green-error" in experiments:
         run_green_error_experiment(use_gigaqbx_fmm=True,
                                    params=GREEN_ERROR_EXPERIMENT_PARAMS,
@@ -883,30 +889,36 @@ def run_experiments(experiments):
                                    params=GREEN_ERROR_EXPERIMENT_PARAMS,
                                    label="green-error")
 
-    # BVP error
+    # BVP error (Table 5 in the paper)
     if "bvp" in experiments:
         run_green_error_experiment(use_gigaqbx_fmm=True,
                                    params=BVP_EXPERIMENT_GREEN_ERROR_PARAMS,
                                    label="bvp-green-error")
         run_bvp_experiment()
 
-    # Particle distributions
+    # Particle distributions (Table 6 in the paper)
     if "particle-distributions" in experiments:
         run_particle_distributions_experiment()
 
-    # Complexity
+    # Complexity (Figures 14 and 15 in the paper)
+    #
+    # Also includes the Green errors associated with complexity (reported in
+    # Figures 14, 15, and Section 5.2.2 in the paper)
     if "complexity" in experiments:
         run_complexity_experiment(use_gigaqbx_fmm=True)
-        run_green_error_experiment(use_gigaqbx_fmm=True,
-                                   params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
-                                   label="complexity-green-error")
-        
         run_complexity_experiment(use_gigaqbx_fmm=False)
-        run_green_error_experiment(use_gigaqbx_fmm=True,
-                                   params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
-                                   label="complexity-green-error")
 
-    # From-sep-smaller threshold
+        run_green_error_experiment(
+                use_gigaqbx_fmm=True,
+                params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
+                label="complexity-green-error")
+        run_green_error_experiment(
+                use_gigaqbx_fmm=True,
+                params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
+                label="complexity-green-error")
+
+    # From-sep-smaller threshold impact (reported in Section 5.2.2 in the
+    # paper)
     if "from-sep-smaller-threshold" in experiments:
         run_from_sep_smaller_threshold_complexity_experiment()
 
@@ -916,30 +928,33 @@ def main():
     names[-1] = " and " + names[-1]
 
     description = (
-            "This script collects data from one or more experiments. " \
+            "This script collects data from one or more experiments. "
             " The names of the experiments are: " + ", ".join(names)
             + ".")
 
     parser = argparse.ArgumentParser(description=description)
 
-    parser.add_argument("-x",
+    parser.add_argument(
+            "-x",
             metavar="experiment-name",
             action="append",
             dest="experiments",
             default=[],
-            help="Run an experiment (can be specified multiple times)")
+            help="Run an experiment (may be specified multiple times)")
 
-    parser.add_argument("--all",
+    parser.add_argument(
+            "--all",
             action="store_true",
             dest="run_all",
             help="Run all available experiments")
-    
-    parser.add_argument("--except",
+
+    parser.add_argument(
+            "--except",
             action="append",
             metavar="experiment-name",
             dest="run_except",
             default=[],
-            help="Do not an experiment (can be specified multiple times)")
+            help="Do not run an experiment (may be specified multiple times)")
 
     result = parser.parse_args()
 
@@ -951,56 +966,14 @@ def main():
     experiments -= set(result.run_except)
 
     run_experiments(experiments)
-=======
-    """
-    run_wall_time_experiment(use_gigaqbx_fmm=True)
-
-    run_wall_time_experiment(use_gigaqbx_fmm=False)
-    """
-
-    # Be nice to other users on the machine.
-    os.nice(1)
-
-    # Green error experiment (Tables 3 and 4 in the paper)
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
-                               label="green-error")
-
-    run_green_error_experiment(use_gigaqbx_fmm=False,
-                               params=GREEN_ERROR_EXPERIMENT_PARAMS,
-                               label="green-error")
-
-    # BVP error (Table 5 in the paper)
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=BVP_EXPERIMENT_GREEN_ERROR_PARAMS,
-                               label="bvp-green-error")
-
-    run_bvp_experiment()
-
-    # Particle distributions (Table 6 in the paper)
-    run_particle_distributions_experiment()
-
-    # Complexity (Figures 14 and 15 in the paper)
-    run_complexity_experiment(use_gigaqbx_fmm=True)
-
-    run_complexity_experiment(use_gigaqbx_fmm=False)
-
-    # Green errors associated with complexity (reported in Figures 14, 15, and
-    # Section 5.2.2 in the paper)
-    run_green_error_experiment(use_gigaqbx_fmm=True,
-                               params=COMPLEXITY_EXPERIMENT_GIGAQBX_GREEN_ERROR_PARAMS,
-                               label="complexity-green-error")
-
-    run_green_error_experiment(use_gigaqbx_fmm=False,
-                               params=COMPLEXITY_EXPERIMENT_QBXFMM_GREEN_ERROR_PARAMS,
-                               label="complexity-green-error")
-    
-    # From-sep-smaller threshold impact (reported in Section 5.2.2 in the paper)
-    run_from_sep_smaller_threshold_complexity_experiment()
->>>>>>> Stashed changes
 
 
 if __name__ == "__main__":
+    # Mixing calls to fork() with OpenCL context creation is a bad idea. This
+    # call makes it safe to create an OpenCL context in the main
+    # thread. (Workers spawned by multiprocessing always use their own
+    # separately created contexts.)
+    multiprocessing.set_start_method("spawn")
     main()
 
 # vim: foldmethod=marker
