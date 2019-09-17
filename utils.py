@@ -233,23 +233,18 @@ def test_get_qbx_center_neighborhood_sizes(ctx_factory):
 
     t_f = 0.9
     
-    """    
-    result = get_qbx_center_neighborhood_sizes_direct(lpot_source, 8/t_f)
-    print("MEAN", np.mean(result[0]))
-    """
+    result_direct = get_qbx_center_neighborhood_sizes_direct(lpot_source, 8/t_f)
+    result_aq = get_qbx_center_neighborhood_sizes(lpot_source, 8/t_f)
 
-    result = get_qbx_center_neighborhood_sizes_direct(lpot_source, 8/t_f)
-    print("MEAN", np.mean(result[0]))
-
-    PERCENTILES = [20, 40, 60, 80, 100]
-    print("PERCENTILES", np.percentile(result[0], PERCENTILES))
+    assert (result_direct[0] == result_aq[0]).all()
+    assert result_direct[1] == result_aq[1]
+    assert result_direct[2] == result_aq[2]
 
 # }}}
 
 
 if __name__ == "__main__":
-    from functools import partial
-    test_get_qbx_center_neighborhood_sizes(partial(cl._csc, 0))
+    pytest.main([__file__])
 
 
 # vim: foldmethod=marker
