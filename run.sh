@@ -1,4 +1,4 @@
-#!/bin/bash -e -x
+#!/bin/bash -e
 
 # Find platform
 if [ "$(uname)" = Darwin ] && [ "$(uname -m)" = x86_64 ]
