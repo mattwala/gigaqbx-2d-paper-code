@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 def initialize_matplotlib():
     plt.rc("font", family="serif")
-    plt.rc("text", usetex=False)
+    plt.rc("text", usetex=True)
+    plt.rc("pgf", preamble=[
+            r"\providecommand{\pqbx}{p_{\textrm{QBX}}}",
+            r"\providecommand{\pfmm}{p_{\textrm{FMM}}}"])
     # https://stackoverflow.com/questions/40424249/vertical-alignment-of-matplotlib-legend-labels-with-latex-math
     plt.rc(("text.latex",), preview=True)
     plt.rc("xtick", labelsize=FONTSIZE)
@@ -36,7 +39,7 @@ def initialize_matplotlib():
     plt.rc("axes", labelsize=1)
     plt.rc("axes", titlesize=FONTSIZE)
     plt.rc("axes", linewidth=LINEWIDTH)
-    plt.rc("pgf", rcfonts=True)
+    plt.rc("pgf", rcfonts=False)
     plt.rc("lines", linewidth=LINEWIDTH)
     plt.rc("patch", linewidth=LINEWIDTH)
     plt.rc("legend", fancybox=False)
@@ -446,7 +449,7 @@ class QBXFMMPerfLabeling(QBXPerfLabelingBase):
 def generate_complexity_figure(input_file, input_order_pairs, use_gigaqbx_fmm):
     subtitles = []
     for fmm_order, qbx_order in input_order_pairs:
-        subtitles.append(rf"$pqbx = {qbx_order}$, $pfmm = {fmm_order}")
+        subtitles.append(rf"$\pqbx = {qbx_order}$, $\pfmm = {fmm_order}")
 
     labeling = GigaQBXPerfLabeling if use_gigaqbx_fmm else QBXFMMPerfLabeling
 
@@ -769,9 +772,9 @@ def gen_figures_and_tables(experiments):
                 generate_wall_time_comparison_table(
                         input_files=input_files,
                         order_pairs=order_pairs,
-                        input_labels=(r"t_\text{qbxfmm}", r"t_\text{giga}"),
+                        input_labels=(r"$t_\text{qbxfmm}$", r"$t_\text{giga}$"),
                         comparison_columns=((1, 0),),
-                        comparison_labels=(r"t_\text{giga} / t_\text{qbxfmm}",),
+                        comparison_labels=(r"$t_\text{giga} / t_\text{qbxfmm}$",),
                         scheme_name="qbx%d" % order_pairs[0][1])
 
     # Green error tables
@@ -799,7 +802,6 @@ def gen_figures_and_tables(experiments):
             input_order_pairs = [(7, 3), (15, 7)]
             generate_complexity_figure(
                     input_file, input_order_pairs, use_gigaqbx_fmm=True)
-
         with my_open("complexity-results-qbxfmm-threshold15.csv")\
                 as input_file:
             input_order_pairs = [(15, 3), (30, 7)]
@@ -810,7 +812,6 @@ def gen_figures_and_tables(experiments):
         with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
             generate_green_error_summary_table(
                     infile, ((7, 3), (15, 7)), scheme_name="gigaqbx")
-
         with my_open("complexity-green-error-results-qbxfmm.csv") as infile:
             generate_green_error_summary_table(
                     infile, ((15, 3), (30, 7)), scheme_name="qbxfmm")
@@ -833,9 +834,9 @@ def gen_figures_and_tables(experiments):
                 generate_complexity_comparison_table(
                         input_files,
                         order_pair=order_pair,
-                        input_labels=("t_{0}", "t_{15}"),
+                        input_labels=("$t_{0}$", "$t_{15}$"),
                         comparison_columns=((1, 0),),
-                        comparison_labels=("t_{15} / t_0",),
+                        comparison_labels=("$t_{15} / t_0$",),
                         perf_labeling=GigaQBXPerfLabeling,
                         scheme_name=scheme_name)
 
