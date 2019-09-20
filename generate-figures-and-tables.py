@@ -753,6 +753,10 @@ EXPERIMENTS = (
         "from-sep-smaller-threshold")
 
 
+GIGAQBX_ORDER_PAIRS = ((10, 3), (15, 7))
+QBXFMM_ORDER_PAIRS = ((15, 3), (30, 7))
+
+
 def gen_figures_and_tables(experiments):
     from functools import partial
     my_open = partial(open_data_file, newline="")
@@ -764,7 +768,7 @@ def gen_figures_and_tables(experiments):
                 "wall-time-results-gigaqbx.csv",
         )
 
-        for order_pairs in (((15, 3), (7, 3)), ((30, 7), (15, 7))):
+        for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
             with contextlib.ExitStack() as stack:
                 input_files = [
                         stack.enter_context(my_open(fname))
@@ -799,22 +803,22 @@ def gen_figures_and_tables(experiments):
     if "complexity" in experiments:
         with my_open("complexity-results-gigaqbx-threshold15.csv")\
                 as input_file:
-            input_order_pairs = [(7, 3), (15, 7)]
             generate_complexity_figure(
-                    input_file, input_order_pairs, use_gigaqbx_fmm=True)
+                    input_file, GIGAQBX_ORDER_PAIRS, use_gigaqbx_fmm=True)
+
         with my_open("complexity-results-qbxfmm-threshold15.csv")\
                 as input_file:
-            input_order_pairs = [(15, 3), (30, 7)]
             generate_complexity_figure(
-                    input_file, input_order_pairs, use_gigaqbx_fmm=False)
+                    input_file, QBXFMM_ORDER_PAIRS, use_gigaqbx_fmm=False)
 
         # Green error summaries for complexity experiment
         with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
             generate_green_error_summary_table(
-                    infile, ((7, 3), (15, 7)), scheme_name="gigaqbx")
+                    infile, GIGAQBX_ORDER_PAIRS, scheme_name="gigaqbx")
+
         with my_open("complexity-green-error-results-qbxfmm.csv") as infile:
             generate_green_error_summary_table(
-                    infile, ((15, 3), (30, 7)), scheme_name="qbxfmm")
+                    infile, QBXFMM_ORDER_PAIRS, scheme_name="qbxfmm")
 
     # Effect of threshold on operation counts
     if "from-sep-smaller-threshold" in experiments:
@@ -823,7 +827,7 @@ def gen_figures_and_tables(experiments):
                 "complexity-results-gigaqbx-threshold15.csv",
         )
 
-        for order_pair in ((7, 3), (15, 7)):
+        for order_pair in GIGAQBX_ORDER_PAIRS:
             with contextlib.ExitStack() as stack:
                 input_files = [
                         stack.enter_context(open_data_file(fname, newline=""))
