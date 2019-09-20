@@ -388,8 +388,6 @@ class QBXPerfLabelingBase(object):
             "eval_qbx_expansions",
             )
 
-    perf_line_styles = ("x-", "+-", ".-", "*-", "s-", "d-")
-
     summary_line_style = ".--"
 
     summary_label = "all"
@@ -417,6 +415,8 @@ class GigaQBXPerfLabeling(QBXPerfLabelingBase):
             r"$X_b^\mathrm{close}$",
             r"$X_b^\mathrm{far}$")
 
+    perf_line_styles = ("x-", "+-", ".-", "*-", "s-", "d-")
+
     perf_colors = (
             Colors.ORANGE,
             Colors.PURPLE,
@@ -440,6 +440,8 @@ class QBXFMMPerfLabeling(QBXPerfLabelingBase):
             r"$W_b$",
             r"$X_b$")
 
+    perf_line_styles = ("x-", "+-", "*-", "d-")
+
     perf_colors = (
             Colors.ORANGE,
             Colors.PURPLE,
@@ -447,7 +449,9 @@ class QBXFMMPerfLabeling(QBXPerfLabelingBase):
             Colors.GREEN)
 
 
-def generate_complexity_figure(input_file, input_order_pairs, use_gigaqbx_fmm):
+def generate_complexity_figure(
+        input_file, input_order_pairs, use_gigaqbx_fmm,
+        summary_labels=None, postproc_func=lambda fig: None):
     subtitles = []
     for fmm_order, qbx_order in input_order_pairs:
         subtitles.append(rf"$\pqbx = {qbx_order}$, $\pfmm = {fmm_order}")
@@ -478,7 +482,8 @@ def generate_complexity_figure(input_file, input_order_pairs, use_gigaqbx_fmm):
 
     make_complexity_figure(
             subtitles, x_values, y_values, labeling, ylabel, xlabel, name,
-            size_inches=(7, 2))
+            size_inches=(7.5, 2.5), summary_labels=summary_labels,
+            postproc_func=postproc_func)
 
 
 def initialize_axes(ax, title, xlabel=None, ylabel=None, grid_axes=None):
@@ -829,15 +834,24 @@ def gen_figures_and_tables(experiments):
 
     # Complexity result graphs
     if "complexity" in experiments:
+        def postproc_func(fig):
+            for ax in fig.get_axes():
+                ax.set_xlim(1e4, 2*1e6)
+                ax.set_ylim(1e5, 2e9)
+
+        summary_labels = tuple(r"$\gamma_{%d}" % n for n in range(5, 66, 10))
+
         with my_open("complexity-results-gigaqbx-threshold15.csv")\
                 as input_file:
             generate_complexity_figure(
-                    input_file, GIGAQBX_ORDER_PAIRS, use_gigaqbx_fmm=True)
+                    input_file, GIGAQBX_ORDER_PAIRS, use_gigaqbx_fmm=True,
+                    summary_labels=summary_labels, postproc_func=postproc_func)
 
         with my_open("complexity-results-qbxfmm-threshold15.csv")\
                 as input_file:
             generate_complexity_figure(
-                    input_file, QBXFMM_ORDER_PAIRS, use_gigaqbx_fmm=False)
+                    input_file, QBXFMM_ORDER_PAIRS, use_gigaqbx_fmm=False,
+                    summary_labels=summary_labels, postproc_func=postproc_func)
 
         complexity_comparison_files = (
                 "complexity-results-qbxfmm-threshold15.csv",
@@ -856,7 +870,8 @@ def gen_figures_and_tables(experiments):
                         input_labels=(r"\#Ops (QBX FMM)", r"\#Ops (GIGAQBX)"),
                         comparison_columns=((1, 0),),
                         comparison_labels=("Ratio",),
-                        perf_labelings=(QBXFMMPerfLabeling, GigaQBXPerfLabeling),
+                        perf_labelings=(
+                            QBXFMMPerfLabeling, GigaQBXPerfLabeling),
                         scheme_name=scheme_name)
 
         # Green error summaries for complexity experiment
@@ -886,7 +901,8 @@ def gen_figures_and_tables(experiments):
                 generate_complexity_comparison_table(
                         input_files,
                         input_order_pairs=(order_pair,) * 2,
-                        input_labels=(r"\#Ops (thresh.=0)", r"\#Ops (thresh.=15)"),
+                        input_labels=(
+                            r"\#Ops (thresh.=0)", r"\#Ops (thresh.=15)"),
                         comparison_columns=((1, 0),),
                         comparison_labels=("Ratio",),
                         perf_labelings=2 * (GigaQBXPerfLabeling,),
