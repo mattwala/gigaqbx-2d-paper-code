@@ -655,10 +655,11 @@ def generate_green_error_summary_table(
 
 def generate_complexity_comparison_table(
         input_files, input_order_pairs, input_labels, comparison_columns,
-        comparison_labels, perf_labeling, scheme_name):
+        comparison_labels, perf_labelings, scheme_name):
     rows_by_arms = {}
 
-    for infile, order_pair in zip(input_files, input_order_pairs):
+    for infile, order_pair, perf_labeling in \
+            zip(input_files, input_order_pairs, perf_labelings):
         for row in csv.DictReader(infile):
             n_arms = int(row["n_arms"])
             fmm_order = int(row["fmm_order"])
@@ -674,11 +675,13 @@ def generate_complexity_comparison_table(
                     + perf_labeling.silent_summed_features)
             result.append(str(value))
 
-    for numerator_col, denominator_col in comparison_columns:
-        for n_arms in rows_by_arms:
-            row = rows_by_arms[n_arms]
-            row.append("%.3f" % (
-                    int(row[numerator_col]) / int(row[denominator_col])))
+    totals = [0] * len(comparison_columns)
+
+    for i, (numerator_col, denominator_col) in enumerate(comparison_columns):
+        for row in rows_by_arms.values():
+            val = int(row[numerator_col]) / int(row[denominator_col])
+            totals[i] += val
+            row.append("%.2f" % val)
 
     table = []
     headers = ["$n$"] + list(input_labels) + list(comparison_labels)
@@ -686,6 +689,15 @@ def generate_complexity_comparison_table(
     for n_arms in sorted(rows_by_arms):
         row = [str(n_arms)] + rows_by_arms[n_arms]
         table.append(row)
+
+    nrows = len(rows_by_arms)
+    ncols = 1 + len(input_files) + len(comparison_columns)
+    mean_row = [r"\cmidrule{1-%d}(avg.)" % ncols]
+    for _ in range(len(input_files)):
+        mean_row.append("---")
+    for i, val in enumerate(totals):
+        mean_row.append("%.2f" % (val / nrows))
+    table.append(mean_row)
 
     ncols = 1 + len(input_labels) + len(comparison_labels)
     column_formats = "r" * ncols
@@ -720,9 +732,13 @@ def generate_wall_time_comparison_table(
     for row in rows_by_arms.values():
         row[:] = [np.mean(times) for times in row]
 
-    for numerator_col, denominator_col in comparison_columns:
+    totals = [0] * len(comparison_columns)
+
+    for i, (numerator_col, denominator_col) in enumerate(comparison_columns):
         for row in rows_by_arms.values():
-            row.append(float(row[numerator_col]) / float(row[denominator_col]))
+            val = float(row[numerator_col]) / float(row[denominator_col])
+            row.append(val)
+            totals[i] += val
 
     for row in rows_by_arms.values():
         row[:] = ["%.2f" % item for item in row]
@@ -733,6 +749,15 @@ def generate_wall_time_comparison_table(
     for n_arms in sorted(rows_by_arms):
         row = [str(n_arms)] + rows_by_arms[n_arms]
         table.append(row)
+
+    nrows = len(rows_by_arms)
+    ncols = 1 + len(input_files) + len(comparison_columns)
+    mean_row = [r"\cmidrule{1-%d}(avg.)" % ncols]
+    for _ in range(len(input_files)):
+        mean_row.append("---")
+    for i, val in enumerate(totals):
+        mean_row.append("%.2f" % (val / nrows))
+    table.append(mean_row)
 
     ncols = 1 + len(input_labels) + len(comparison_labels)
     column_formats = "r" * ncols
@@ -831,7 +856,7 @@ def gen_figures_and_tables(experiments):
                         input_labels=(r"\#Ops (QBX FMM)", r"\#Ops (GIGAQBX)"),
                         comparison_columns=((1, 0),),
                         comparison_labels=("Ratio",),
-                        perf_labeling=GigaQBXPerfLabeling,
+                        perf_labelings=(QBXFMMPerfLabeling, GigaQBXPerfLabeling),
                         scheme_name=scheme_name)
 
         # Green error summaries for complexity experiment
@@ -864,7 +889,7 @@ def gen_figures_and_tables(experiments):
                         input_labels=(r"\#Ops (thresh.=0)", r"\#Ops (thresh.=15)"),
                         comparison_columns=((1, 0),),
                         comparison_labels=("Ratio",),
-                        perf_labeling=GigaQBXPerfLabeling,
+                        perf_labelings=2 * (GigaQBXPerfLabeling,),
                         scheme_name=scheme_name)
 
 
