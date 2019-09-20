@@ -1,0 +1,108 @@
+\documentclass{article}
+
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{etoolbox}
+\usepackage[colorlinks]{hyperref}
+\usepackage{multirow}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+
+\newcommand{\pfmm}{p_{\textrm{FMM}}}
+\newcommand{\pqbx}{p_{\textrm{QBX}}}
+
+\title{Experimental Results}
+
+\sisetup{
+    table-format = 1.2e-1,
+    table-number-alignment = center,
+    table-sign-exponent = true,
+    round-mode = places,
+    round-precision = 2,
+    detect-weight = true,
+    mode = text,
+}
+
+\newcommand{\cellcenter}[1]{\multicolumn{1}{c}{#1}}
+\renewrobustcmd{\bfseries}{\fontseries{b}\selectfont}
+\newcommand{\converged}[1]{\bfseries #1}
+
+\begin{document}
+
+\maketitle
+\listoftables
+\listoffigures
+
+\begin{table}
+  \centering
+  \caption{Green error experiments results for GIGAQBX, (c.f.\ Table~3 of paper)}
+  \input{out/green-error-linf-gigaqbx.tex}
+  \bigskip
+  \caption{Green error experiments results for QBX FMM of~[46], (c.f.\ Table~4 of paper)}
+  \input{green-error-linf-qbxfmm.tex}
+\end{table}
+
+\begin{table}
+  \centering
+  \caption{BVP error experiment (c.f.\ Table~5 of paper)}
+  \input{bvp-linf.tex}
+\end{table}
+
+\begin{table}
+  \centering
+  \caption{Particle distributions experiment (c.f.\ Table~6 of paper)}
+  \input{particle-distributions.tex}
+\end{table}
+
+\begin{figure}
+  \centering
+  \includegraphics{complexity-gigaqbx.pdf}
+  \caption{Complexity of GIGAQBX FMM (c.f.\ Fig.~14 of paper)}
+  \label{tab:complexity-gigaqbx}
+  \bigskip
+  \includegraphics{complexity-qbxfmm.pdf}
+  \caption{Complexity of QBX FMM (c.f.\ Fig.~15 of paper)}
+  \label{tab:complexity-qbxfmm}
+\end{figure}
+
+\begin{table}
+  \centering
+  \caption{Operation count comparison when $\pqbx = 3$; $\pfmm = 10$ for GIGAQBX and $\pfmm = 15$ for QBX FMM}
+  \input{complexity-summary-qbx3-qbxfmm-vs-gigaqbx.tex}
+  \bigskip
+  \caption{Operation count comparison when $\pqbx = 7$; $\pfmm = 15$ for GIGAQBX and $\pfmm = 30$ for QBX FMM}
+  \input{complexity-summary-qbx7-qbxfmm-vs-gigaqbx.tex}
+\end{table}
+
+\begin{table}
+  \centering
+  \caption{Green error for Table~\ref{tab:complexity-gigaqbx}}
+  \input{complexity-green-errors-gigaqbx.tex}
+  \bigskip
+  \caption{Green error for Table~\ref{tab:complexity-qbxfmm}}
+  \input{complexity-green-errors-qbxfmm.tex}
+\end{table}
+
+\begin{table}
+  \centering
+  \caption{Overall operation counts versus List 3 far threshold for the GIGAQBX
+    FMM, for $\pqbx = 3, \pfmm = 10$.}
+  \input{complexity-summary-fmm10-qbx3-gigaqbx-threshold0-vs-threshold15.tex}
+  \bigskip
+  \caption{Overall operation counts versus List 3 far threshold for the GIGAQBX
+    FMM, for $\pqbx = 7, \pfmm = 15$.}
+  \input{complexity-summary-fmm15-qbx7-gigaqbx-threshold0-vs-threshold15.tex}
+\end{table}
+
+\begin{table}
+  \centering
+  \caption{Wall time for evaluating single-layer potential using QBX order~3,
+    using $\pfmm=10$ for GIGAQBX and $\pfmm=15$ for QBX FMM}
+  \input{wall-time-summary-qbx3.tex}
+  \bigskip
+  \caption{Wall time for evaluating single-layer potential using QBX order~7,
+    with GIGAQBX $\pfmm=15$ and QBX FMM parameters $\pfmm=30$}
+  \input{wall-time-summary-qbx7.tex}
+\end{table}
+
+\end{document}
