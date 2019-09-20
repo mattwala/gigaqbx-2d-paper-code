@@ -67,14 +67,16 @@ def open_output_file(filename, **kwargs):
 # {{{ utils
 
 def print_table(table, headers, outf_name, column_formats=None):
-    if column_formats is None:
-        column_formats = "c" * len(headers)
     with open_output_file(outf_name) as outfile:
         def my_print(s):
             print(s, file=outfile)
         my_print(r"\begin{tabular}{%s}" % column_formats)
         my_print(r"\toprule")
-        my_print(" & ".join(headers) + r"\\")
+        if isinstance(headers[0], (list, tuple)):
+            for header_row in headers:
+                my_print(" & ".join(header_row) + r"\\")
+        else:
+            my_print(" & ".join(headers) + r"\\")
         my_print(r"\midrule")
         for row in table:
             my_print(" & ".join(row) + r"\\")
@@ -327,10 +329,17 @@ def generate_particle_distribution_table(infile):
     rows = []
 
     headers = [
-            r"\multirow{2}{*}{$n$}",
-            r"\cellcenter{\multirow{2}{*}{$N_S$}}",
-            r"\cellcenter{\multirow{2}{*}{$M_C$}}",
-            r"\multicolumn{5}{c}{Percentiles}"]
+            [
+                r"\multirow{2}{*}{$n$}",
+                r"\cellcenter{\multirow{2}{*}{$N_S$}}",
+                r"\cellcenter{\multirow{2}{*}{$M_C$}}",
+                r"\multicolumn{5}{c}{Percentiles}",
+                ],
+            [
+                r"\cmidrule{4-8}",
+                "",
+                "",
+                ] + [r"\cellcenter{%d\%%}" % pct for pct in PERCENTILES]]
 
     for entry in csv.DictReader(infile):
         row = [
@@ -344,14 +353,6 @@ def generate_particle_distribution_table(infile):
         rows.append(row)
 
     rows.sort(key=lambda row: int(row[0]))
-    rows.insert(
-            0,
-            [
-                r"\cmidrule{4-8}",
-                "",
-                "",
-            ] + [
-                r"\cellcenter{%d\%%}" % pct for pct in PERCENTILES])
 
     print_table(
             rows, headers, "particle-distributions.tex", "r" * len(rows[0]))
@@ -653,11 +654,11 @@ def generate_green_error_summary_table(
 # {{{ complexity comparison table
 
 def generate_complexity_comparison_table(
-        input_files, order_pair, input_labels, comparison_columns,
+        input_files, input_order_pairs, input_labels, comparison_columns,
         comparison_labels, perf_labeling, scheme_name):
     rows_by_arms = {}
 
-    for infile in input_files:
+    for infile, order_pair in zip(input_files, input_order_pairs):
         for row in csv.DictReader(infile):
             n_arms = int(row["n_arms"])
             fmm_order = int(row["fmm_order"])
@@ -716,15 +717,15 @@ def generate_wall_time_comparison_table(
             result = rows_by_arms[n_arms][i]
             result.append(float(row["time"]))
 
-    for n_arms in rows_by_arms:
-        row = rows_by_arms[n_arms]
-        row[:] = ["%.1f" % np.mean(times) for times in row]
+    for row in rows_by_arms.values():
+        row[:] = [np.mean(times) for times in row]
 
     for numerator_col, denominator_col in comparison_columns:
-        for n_arms in rows_by_arms:
-            row = rows_by_arms[n_arms]
-            row.append("%.3f" % (
-                    float(row[numerator_col]) / float(row[denominator_col])))
+        for row in rows_by_arms.values():
+            row.append(float(row[numerator_col]) / float(row[denominator_col]))
+
+    for row in rows_by_arms.values():
+        row[:] = ["%.2f" % item for item in row]
 
     table = []
     headers = ["$n$"] + list(input_labels) + list(comparison_labels)
@@ -776,9 +777,11 @@ def gen_figures_and_tables(experiments):
                 generate_wall_time_comparison_table(
                         input_files=input_files,
                         order_pairs=order_pairs,
-                        input_labels=(r"$t_\text{qbxfmm}$", r"$t_\text{giga}$"),
+                        input_labels=(
+                            r"$t_\text{qbxfmm}$", r"$t_\text{giga}$"),
                         comparison_columns=((1, 0),),
-                        comparison_labels=(r"$t_\text{giga} / t_\text{qbxfmm}$",),
+                        comparison_labels=(
+                            r"$t_\text{giga} / t_\text{qbxfmm}$",),
                         scheme_name="qbx%d" % order_pairs[0][1])
 
     # Green error tables
@@ -811,6 +814,26 @@ def gen_figures_and_tables(experiments):
             generate_complexity_figure(
                     input_file, QBXFMM_ORDER_PAIRS, use_gigaqbx_fmm=False)
 
+        complexity_comparison_files = (
+                "complexity-results-qbxfmm-threshold15.csv",
+                "complexity-results-gigaqbx-threshold15.csv",
+        )
+
+        for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
+            with contextlib.ExitStack() as stack:
+                input_files = [
+                        stack.enter_context(open_data_file(fname, newline=""))
+                        for fname in complexity_comparison_files]
+                scheme_name = "qbx%d-qbxfmm-vs-gigaqbx" % order_pairs[0][1]
+                generate_complexity_comparison_table(
+                        input_files,
+                        input_order_pairs=order_pairs,
+                        input_labels=(r"\#Ops (QBX FMM)", r"\#Ops (GIGAQBX)"),
+                        comparison_columns=((1, 0),),
+                        comparison_labels=("Ratio",),
+                        perf_labeling=GigaQBXPerfLabeling,
+                        scheme_name=scheme_name)
+
         # Green error summaries for complexity experiment
         with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
             generate_green_error_summary_table(
@@ -837,10 +860,10 @@ def gen_figures_and_tables(experiments):
                         % order_pair)
                 generate_complexity_comparison_table(
                         input_files,
-                        order_pair=order_pair,
-                        input_labels=("$t_{0}$", "$t_{15}$"),
+                        input_order_pairs=(order_pair,) * 2,
+                        input_labels=(r"\#Ops (thresh.=0)", r"\#Ops (thresh.=15)"),
                         comparison_columns=((1, 0),),
-                        comparison_labels=("$t_{15} / t_0$",),
+                        comparison_labels=("Ratio",),
                         perf_labeling=GigaQBXPerfLabeling,
                         scheme_name=scheme_name)
 
