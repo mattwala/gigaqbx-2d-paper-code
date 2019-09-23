@@ -30,8 +30,9 @@ def initialize_matplotlib():
     plt.rc("font", family="serif")
     plt.rc("text", usetex=True)
     plt.rc("pgf", preamble=[
-            r"\providecommand{\pqbx}{p_{\textrm{QBX}}}",
-            r"\providecommand{\pfmm}{p_{\textrm{FMM}}}"])
+            r"\usepackage{amsmath}",
+            r"\providecommand{\pqbx}{p_{\text{QBX}}}",
+            r"\providecommand{\pfmm}{p_{\text{FMM}}}"])
     # https://stackoverflow.com/questions/40424249/vertical-alignment-of-matplotlib-legend-labels-with-latex-math
     plt.rc(("text.latex",), preview=True)
     plt.rc("xtick", labelsize=FONTSIZE)
