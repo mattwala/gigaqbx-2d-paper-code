@@ -1,6 +1,6 @@
 .PHONY: all clean
 
-OUTDIR := latexout
+OUTDIR := summary
 
 all: $(OUTDIR)/summary.pdf
 
