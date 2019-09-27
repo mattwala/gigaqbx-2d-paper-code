@@ -1,12 +1,15 @@
 \documentclass{article}
 
 \usepackage{booktabs}
+\usepackage{caption}
 \usepackage{siunitx}
 \usepackage{etoolbox}
 \usepackage[colorlinks]{hyperref}
 \usepackage{multirow}
 \usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
+
+\captionsetup[table]{position=top}
 
 \newcommand{\pfmm}{p_{\textrm{FMM}}}
 \newcommand{\pqbx}{p_{\textrm{QBX}}}
@@ -58,11 +61,11 @@
   \centering
   \includegraphics{complexity-gigaqbx.pdf}
   \caption{Complexity of GIGAQBX FMM (c.f.\ Fig.~14 of paper).}
-  \label{tab:complexity-gigaqbx}
+  \label{fig:complexity-gigaqbx}
   \bigskip
   \includegraphics{complexity-qbxfmm.pdf}
   \caption{Complexity of QBX FMM (c.f.\ Fig.~15 of paper).}
-  \label{tab:complexity-qbxfmm}
+  \label{fig:complexity-qbxfmm}
 \end{figure}
 
 \begin{table}
@@ -78,10 +81,10 @@
 
 \begin{table}
   \centering
-  \caption{Green error for Table~\ref{tab:complexity-gigaqbx}.}
+  \caption{Green error for Figure~\ref{fig:complexity-gigaqbx}.}
   \input{complexity-green-errors-gigaqbx.tex}
   \bigskip
-  \caption{Green error for Table~\ref{tab:complexity-qbxfmm}.}
+  \caption{Green error for Figure~\ref{fig:complexity-qbxfmm}.}
   \input{complexity-green-errors-qbxfmm.tex}
 \end{table}
 
@@ -105,6 +108,17 @@
   \caption{Wall time for evaluating single-layer potential using QBX order~7,
     with GIGAQBX $\pfmm=15$ and QBX FMM parameters $\pfmm=30$.}
   \input{wall-time-summary-qbx7.tex}
+\end{table}
+
+\begin{table}
+  \centering
+  \caption{Summary of changes to operation counts for GIGAQBX
+    (c.f. Figure~\ref{fig:complexity-gigaqbx}).}
+  \input{complexity-summary-gigaqbx-old-vs-new.tex}
+  \bigskip
+  \caption{Summary of changes to operation counts for the QBX FMM
+    (c.f. Figure~\ref{fig:complexity-qbxfmm}).}
+  \input{complexity-summary-qbxfmm-old-vs-new.tex}
 \end{table}
 
 \end{document}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import collections
 import contextlib
 import csv
 import logging
@@ -331,13 +332,13 @@ def generate_particle_distribution_table(infile):
 
     headers = [
             [
-                r"\multirow{2}{*}{$n$}",
+                r"\cellcenter{\multirow{2}{*}{$n$}}",
                 r"\cellcenter{\multirow{2}{*}{$N_S$}}",
                 r"\cellcenter{\multirow{2}{*}{$M_C$}}",
                 r"\multicolumn{5}{c}{Percentiles}",
                 ],
             [
-                r"\cmidrule{4-8}",
+                r"\cmidrule(lr){4-8}",
                 "",
                 "",
                 ] + [r"\cellcenter{%d\%%}" % pct for pct in PERCENTILES]]
@@ -378,6 +379,22 @@ class Colors(object):
 
 class QBXPerfLabelingBase(object):
 
+    summary_line_style = ".--"
+
+    summary_label = "all"
+
+    summary_color = Colors.RED
+
+
+class QBXPerfLabelingSummaryOnly(QBXPerfLabelingBase):
+
+    silent_summed_features = ("op_count",)
+
+    perf_features = ()
+
+
+class QBXPerfLabelingWithStages(QBXPerfLabelingBase):
+
     silent_summed_features = (
             "form_multipoles",
             "coarsen_multipoles",
@@ -389,16 +406,8 @@ class QBXPerfLabelingBase(object):
             "eval_qbx_expansions",
             )
 
-    summary_line_style = ".--"
 
-    summary_label = "all"
-
-    summary_label = "all"
-
-    summary_color = Colors.RED
-
-
-class GigaQBXPerfLabeling(QBXPerfLabelingBase):
+class GigaQBXPerfLabeling(QBXPerfLabelingWithStages):
 
     perf_features = (
             "form_global_qbx_locals_list1",
@@ -427,7 +436,7 @@ class GigaQBXPerfLabeling(QBXPerfLabelingBase):
             Colors.GREEN)
 
 
-class QBXFMMPerfLabeling(QBXPerfLabelingBase):
+class QBXFMMPerfLabeling(QBXPerfLabelingWithStages):
 
     perf_features = (
             "form_global_qbx_locals_list1",
@@ -483,7 +492,7 @@ def generate_complexity_figure(
 
     make_complexity_figure(
             subtitles, x_values, y_values, labeling, ylabel, xlabel, name,
-            size_inches=(7.5, 2.5), summary_labels=summary_labels,
+            size_inches=(7, 2.5), summary_labels=summary_labels,
             postproc_func=postproc_func)
 
 
@@ -659,59 +668,156 @@ def generate_green_error_summary_table(
 
 # {{{ complexity comparison table
 
-def generate_complexity_comparison_table(
-        input_files, input_order_pairs, input_labels, comparison_columns,
-        comparison_labels, perf_labelings, scheme_name):
-    rows_by_arms = {}
+Column = collections.namedtuple(
+        "Column", "label, order_pair, input_source, fmt")
 
-    for infile, order_pair, perf_labeling in \
-            zip(input_files, input_order_pairs, perf_labelings):
+ComparisonColumn = collections.namedtuple(
+        "ComparisonColumn", "label, numerator_column, denominator_column, fmt")
+
+ColumnGroup = collections.namedtuple("ColumnGroup", "label, columns")
+
+
+def generate_complexity_comparison_table(
+        input_files, perf_labelings, spec, include_averages, label):
+    """
+    Inputs:
+
+        input_files: List of input sources
+
+        perf_labelings: A PerfLabeling for each input source describing how to
+            summarize data
+
+        spec: A tuple of elements describing the column specification
+
+        include_averages: Whether to include a row at the bottom summarizing
+            average ratios
+
+        scheme_name: A label for the output file
+    """
+
+    # {{{ gather results
+
+    results_by_file = [dict() for _ in range(len(input_files))]
+    arms = set()
+
+    for infile, perf_labeling, results in \
+            zip(input_files, perf_labelings, results_by_file):
         for row in csv.DictReader(infile):
             n_arms = int(row["n_arms"])
+            arms.add(n_arms)
             fmm_order = int(row["fmm_order"])
             qbx_order = int(row["qbx_order"])
-            if (fmm_order, qbx_order) != order_pair:
-                continue
-            if n_arms not in rows_by_arms:
-                rows_by_arms[n_arms] = []
-            result = rows_by_arms[n_arms]
             value = sum(
                     int(val) for key, val in row.items()
                     if key in perf_labeling.perf_features
                     + perf_labeling.silent_summed_features)
-            result.append(str(value))
+            results[n_arms, fmm_order, qbx_order] = value
 
-    totals = [0] * len(comparison_columns)
+    # }}}
 
-    for i, (numerator_col, denominator_col) in enumerate(comparison_columns):
-        for row in rows_by_arms.values():
-            val = int(row[numerator_col]) / int(row[denominator_col])
-            totals[i] += val
-            row.append("%.2f" % val)
+    # {{{ construct rows
 
-    table = []
-    headers = ["$n$"] + list(input_labels) + list(comparison_labels)
+    rows = []
 
-    for n_arms in sorted(rows_by_arms):
-        row = [str(n_arms)] + rows_by_arms[n_arms]
-        table.append(row)
+    def build_row(row, n_arms, spec):
+        for item in spec:
+            if isinstance(item, ColumnGroup):
+                build_row(row, n_arms, item.columns)
 
-    nrows = len(rows_by_arms)
-    ncols = 1 + len(input_files) + len(comparison_columns)
-    mean_row = [r"\cmidrule{1-%d}(avg.)" % ncols]
-    for _ in range(len(input_files)):
-        mean_row.append("---")
-    for i, val in enumerate(totals):
-        mean_row.append("%.2f" % (val / nrows))
-    table.append(mean_row)
+            elif isinstance(item, Column):
+                key = (n_arms,) + item.order_pair
+                row.append(results_by_file[item.input_source][key])
 
-    ncols = 1 + len(input_labels) + len(comparison_labels)
-    column_formats = "r" * ncols
+            elif isinstance(item, ComparisonColumn):
+                row.append(row[item.numerator_column] / row[item.denominator_column])
+
+    for n_arms in sorted(arms):
+        row = [n_arms]
+        build_row(row, n_arms, spec)
+        rows.append(row)
+
+    if include_averages:
+        avg_row = [r"\cmidrule{1-%d}(avg.)" % len(rows[0])]
+
+        def build_avg_row(spec):
+            for item in spec:
+                if isinstance(item, ColumnGroup):
+                    build_avg_row(item.columns)
+
+                elif isinstance(item, Column):
+                    avg_row.append(None)
+
+                elif isinstance(item, ComparisonColumn):
+                    i = len(avg_row)
+                    avg_row.append(sum(row[i] for row in rows) / len(rows))
+
+        build_avg_row(spec)
+        rows.append(avg_row)
+
+    formats = ["%d"]
+
+    def get_formats(spec):
+        for item in spec:
+            if isinstance(item, ColumnGroup):
+                get_formats(item.columns)
+
+            elif isinstance(item, (Column, ComparisonColumn)):
+                formats.append(item.fmt)
+
+    get_formats(spec)
+
+    def stringify(args):
+        index, item = args
+        if item is None:
+            return "---"
+        elif isinstance(item, str):
+            return item
+        else:
+            return formats[index] % item
+
+    for row in rows:
+        row[:] = map(stringify, enumerate(row))
+
+    # }}}
+
+    # {{{ construct headers
+
+    headers = [[""]]
+    lengths = [1]
+
+    def build_header(irow, spec):
+        for item in spec:
+            if isinstance(item, ColumnGroup):
+                if len(headers) == 1 + irow:
+                    headers.append([""])
+                    lengths.append(1)
+
+                ncols = len(item.columns)
+                label = r"\multicolumn{%d}{c}{%s}" % (ncols, item.label)
+                headers[irow].append(label)
+                lengths[irow] += ncols
+
+                rule_start = 1 + lengths[irow + 1]
+                rule_end = rule_start + ncols - 1
+                headers[irow + 1][0] += (
+                        r"\cmidrule(lr){%d-%d}" % (rule_start, rule_end))
+                lengths[irow + 1] = rule_end
+
+                build_header(irow + 1, item.columns)
+
+            elif isinstance(item, (Column, ComparisonColumn)):
+                headers[irow].append(r"\cellcenter{%s}" % item.label)
+
+    build_header(0, spec)
+    headers[0][0] = r"\cellcenter{\multirow{%d}{*}{$n$}}" % len(headers)
+
+    # }}}
+
     print_table(
-            table,
+            rows,
             headers,
-            f"complexity-summary-{scheme_name}.tex",
-            column_formats)
+            f"complexity-summary-{label}.tex",
+            "r" * len(rows[0]))
 
 # }}}
 
@@ -782,7 +888,8 @@ EXPERIMENTS = (
         "bvp",
         "particle-distributions",
         "complexity",
-        "from-sep-smaller-threshold")
+        "from-sep-smaller-threshold",
+        "op-count-comparison")
 
 
 GIGAQBX_ORDER_PAIRS = ((10, 3), (15, 7))
@@ -805,6 +912,7 @@ def gen_figures_and_tables(experiments):
                 input_files = [
                         stack.enter_context(my_open(fname))
                         for fname in wall_time_comparison_files]
+
                 generate_wall_time_comparison_table(
                         input_files=input_files,
                         order_pairs=order_pairs,
@@ -859,21 +967,29 @@ def gen_figures_and_tables(experiments):
                 "complexity-results-gigaqbx-threshold15.csv",
         )
 
+        complexity_comparison_labelings = (
+                QBXFMMPerfLabeling,
+                GigaQBXPerfLabeling)
+
         for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
             with contextlib.ExitStack() as stack:
                 input_files = [
                         stack.enter_context(open_data_file(fname, newline=""))
                         for fname in complexity_comparison_files]
-                scheme_name = "qbx%d-qbxfmm-vs-gigaqbx" % order_pairs[0][1]
+
+                label = "qbx%d-qbxfmm-vs-gigaqbx" % order_pairs[0][1]
+
+                spec = (
+                        Column(r"\#Ops (QBX FMM)", order_pairs[0], 0, "%d"),
+                        Column(r"\#Ops (GIGAQBX)", order_pairs[1], 1, "%d"),
+                        ComparisonColumn("Ratio", 2, 1, "%.2f"))
+
                 generate_complexity_comparison_table(
                         input_files,
-                        input_order_pairs=order_pairs,
-                        input_labels=(r"\#Ops (QBX FMM)", r"\#Ops (GIGAQBX)"),
-                        comparison_columns=((1, 0),),
-                        comparison_labels=("Ratio",),
-                        perf_labelings=(
-                            QBXFMMPerfLabeling, GigaQBXPerfLabeling),
-                        scheme_name=scheme_name)
+                        complexity_comparison_labelings,
+                        spec,
+                        include_averages=True,
+                        label=label)
 
         # Green error summaries for complexity experiment
         with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
@@ -896,18 +1012,66 @@ def gen_figures_and_tables(experiments):
                 input_files = [
                         stack.enter_context(open_data_file(fname, newline=""))
                         for fname in complexity_comparison_files]
-                scheme_name = (
+                label = (
                         "fmm%d-qbx%d-gigaqbx-threshold0-vs-threshold15"
                         % order_pair)
                 generate_complexity_comparison_table(
                         input_files,
-                        input_order_pairs=(order_pair,) * 2,
-                        input_labels=(
-                            r"\#Ops (thresh.=0)", r"\#Ops (thresh.=15)"),
-                        comparison_columns=((1, 0),),
-                        comparison_labels=("Ratio",),
-                        perf_labelings=2 * (GigaQBXPerfLabeling,),
-                        scheme_name=scheme_name)
+                        (GigaQBXPerfLabeling,) * 2,
+                        spec=(
+                            Column(r"\#Ops (thresh.=0)", order_pair, 0, "%d"),
+                            Column(r"\#Ops (thresh.=15)", order_pair, 1, "%d"),
+                            ComparisonColumn("Ratio", 2, 1, "%.2f")),
+                        include_averages=True,
+                        label=label)
+
+    if "op-count-comparison" in experiments:
+        gigaqbx_complexity_results = (
+                "old-summary-op-counts-gigaqbx.csv",
+                "complexity-results-gigaqbx-threshold15.csv",
+
+        )
+
+        qbxfmm_complexity_results = (
+                "old-summary-op-counts-qbxfmm.csv",
+                "complexity-results-qbxfmm-threshold15.csv",
+        )
+
+        for label, perf_labeling, input_file_names, order_pairs in \
+                zip(
+                    ("gigaqbx", "qbxfmm"),
+                    (GigaQBXPerfLabeling, QBXFMMPerfLabeling),
+                    (gigaqbx_complexity_results, qbxfmm_complexity_results),
+                    (GIGAQBX_ORDER_PAIRS, QBXFMM_ORDER_PAIRS)):
+
+            def make_group_label(order_pair):
+                fmm_order, qbx_order = order_pair
+                return fr"$\pqbx={qbx_order}, \pfmm={fmm_order}$"
+
+            old = r"\#Ops (Old)"
+            new = r"\#Ops (New)"
+
+            spec = (
+                ColumnGroup(make_group_label(order_pairs[0]), (
+                    Column(old, order_pairs[0], 0, "%d"),
+                    Column(new, order_pairs[0], 1, "%d"),
+                    ComparisonColumn("Ratio", 2, 1, "%.2f"))),
+                ColumnGroup(make_group_label(order_pairs[1]), (
+                    Column(old, order_pairs[1], 0, "%d"),
+                    Column(new, order_pairs[1], 1, "%d"),
+                    ComparisonColumn("Ratio", 5, 4, "%.2f"))))
+
+            with contextlib.ExitStack() as stack:
+                input_files = [
+                        stack.enter_context(open_data_file(fname, newline=""))
+                        for fname in input_file_names]
+
+                generate_complexity_comparison_table(
+                        input_files,
+                        (QBXPerfLabelingSummaryOnly, perf_labeling),
+                        spec,
+                        include_averages=False,
+                        label=f"{label}-old-vs-new")
 
 
 def main():
