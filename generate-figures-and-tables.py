@@ -1046,7 +1046,7 @@ def gen_figures_and_tables(experiments):
 
             def make_group_label(order_pair):
                 fmm_order, qbx_order = order_pair
-                return fr"$\pqbx={qbx_order}, \pfmm={fmm_order}$"
+                return fr"$\pqbx={qbx_order}$, $\pfmm={fmm_order}$"
 
             old = r"\#Ops (Old)"
             new = r"\#Ops (New)"
