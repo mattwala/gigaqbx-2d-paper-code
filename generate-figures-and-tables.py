@@ -4,6 +4,7 @@ import argparse
 import collections
 import contextlib
 import csv
+import functools
 import logging
 import os
 
@@ -61,6 +62,9 @@ def open_data_file(filename, **kwargs):
     return open(os.path.join(DATA_DIR, filename), "r", **kwargs)
 
 
+my_open = functools.partial(open_data_file, newline="")
+
+
 def open_output_file(filename, **kwargs):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     return open(os.path.join(OUTPUT_DIR, filename), "w", **kwargs)
@@ -68,23 +72,27 @@ def open_output_file(filename, **kwargs):
 
 # {{{ utils
 
-def print_table(table, headers, outf_name, column_formats=None):
-    with open_output_file(outf_name) as outfile:
+OutputTable = collections.namedtuple(
+        "OutputTable", "rows, headers, column_formats, filename")
+
+
+def print_table(table):
+    with open_output_file(table.filename) as outfile:
         def my_print(s):
             print(s, file=outfile)
-        my_print(r"\begin{tabular}{%s}" % column_formats)
+        my_print(r"\begin{tabular}{%s}" % table.column_formats)
         my_print(r"\toprule")
-        if isinstance(headers[0], (list, tuple)):
-            for header_row in headers:
+        if isinstance(table.headers[0], (list, tuple)):
+            for header_row in table.headers:
                 my_print(" & ".join(header_row) + r"\\")
         else:
-            my_print(" & ".join(headers) + r"\\")
+            my_print(" & ".join(table.headers) + r"\\")
         my_print(r"\midrule")
-        for row in table:
+        for row in table.rows:
             my_print(" & ".join(row) + r"\\")
         my_print(r"\bottomrule")
         my_print(r"\end{tabular}")
-    logger.info("Wrote %s", os.path.join(OUTPUT_DIR, outf_name))
+    logger.info("Wrote %s", os.path.join(OUTPUT_DIR, table.filename))
 
 
 def fmt(val):
@@ -196,12 +204,13 @@ def generate_green_error_table(infile, scheme_name):
 
     # }}}
 
-    print_table(
-            table_l2, headers, f"green-error-l2-{scheme_name}.tex",
-            column_formats)
-    print_table(
-            table_linf, headers, f"green-error-linf-{scheme_name}.tex",
-            column_formats)
+    return (
+        OutputTable(
+            table_l2, headers, column_formats,
+            f"green-error-l2-{scheme_name}.tex"),
+        OutputTable(
+            table_linf, headers, column_formats,
+            f"green-error-linf-{scheme_name}.tex"))
 
 # }}}
 
@@ -316,8 +325,9 @@ def generate_bvp_error_table(infile_bvp, infile_green):
             bvp_error_linf, converged_bvp_error_linf,
             green_error_linf, converged_green_error_linf)
 
-    print_table(table_l2, headers, "bvp-l2.tex", column_formats)
-    print_table(table_linf, headers, "bvp-linf.tex", column_formats)
+    return (
+            OutputTable(table_l2, headers, column_formats, "bvp-l2.tex"),
+            OutputTable(table_linf, headers, column_formats, "bvp-linf.tex"))
 
 # }}}
 
@@ -356,8 +366,8 @@ def generate_particle_distribution_table(infile):
 
     rows.sort(key=lambda row: int(row[0]))
 
-    print_table(
-            rows, headers, "particle-distributions.tex", "r" * len(rows[0]))
+    return OutputTable(
+            rows, headers, "r" * len(rows[0]), "particle-distributions.tex")
 
 # }}}
 
@@ -657,11 +667,10 @@ def generate_green_error_summary_table(
 
     table.append(mean_row)
     column_formats = "r" + "S" * len(fmm_and_qbx_order_pairs)
-    print_table(
-            table,
-            headers,
-            f"complexity-green-errors-{scheme_name}.tex",
-            column_formats)
+
+    return OutputTable(
+            table, headers, column_formats,
+            f"complexity-green-errors-{scheme_name}.tex")
 
 # }}}
 
@@ -729,7 +738,9 @@ def generate_complexity_comparison_table(
                 row.append(results_by_file[item.input_source][key])
 
             elif isinstance(item, ComparisonColumn):
-                row.append(row[item.numerator_column] / row[item.denominator_column])
+                row.append(
+                        row[item.numerator_column]
+                        / row[item.denominator_column])
 
     for n_arms in sorted(arms):
         row = [n_arms]
@@ -813,11 +824,9 @@ def generate_complexity_comparison_table(
 
     # }}}
 
-    print_table(
-            rows,
-            headers,
-            f"complexity-summary-{label}.tex",
-            "r" * len(rows[0]))
+    return OutputTable(
+            rows, headers, "r" * len(rows[0]),
+            f"complexity-summary-{label}.tex")
 
 # }}}
 
@@ -873,11 +882,41 @@ def generate_wall_time_comparison_table(
 
     ncols = 1 + len(input_labels) + len(comparison_labels)
     column_formats = "r" * ncols
-    print_table(
-            table,
-            headers,
-            f"wall-time-summary-{scheme_name}.tex",
-            column_formats)
+
+    return OutputTable(
+            table, headers, column_formats,
+            f"wall-time-summary-{scheme_name}.tex")
+
+# }}}
+
+
+# {{{ data comparison table
+
+def generate_data_comparison_table(
+        old_table, new_table, cols_to_compare, comparison_func, output_fname):
+
+    rows = []
+
+    for old_row, new_row in zip(old_table.rows, new_table.rows):
+        assert len(old_row) == len(new_row)
+
+        row = []
+        corrected_row = []
+        rows.append(row)
+        rows.append(corrected_row)
+
+        for icol, (old_item, new_item) in enumerate(zip(old_row, new_row)):
+            if icol not in cols_to_compare:
+                assert comparison_func(icol, old_item, new_item)
+                row.append(old_item)
+                corrected_row.append("")
+
+            if comparison_func(icol, old_item, new_item):
+                row.append(old_item)
+                corrected_row.append("")
+            else:
+                row.append(r"\uncorrected{%s}" % old_item)
+                corrected_row.append(r"\corrected{%s}" % new_item)
 
 # }}}
 
@@ -887,6 +926,9 @@ EXPERIMENTS = (
         "green-error",
         "bvp",
         "particle-distributions",
+        "green-error-comparison",
+        "bvp-comparison",
+        "particle-distributions-comparison",
         "complexity",
         "from-sep-smaller-threshold",
         "op-count-comparison")
@@ -896,182 +938,224 @@ GIGAQBX_ORDER_PAIRS = ((10, 3), (15, 7))
 QBXFMM_ORDER_PAIRS = ((15, 3), (30, 7))
 
 
-def gen_figures_and_tables(experiments):
-    from functools import partial
-    my_open = partial(open_data_file, newline="")
+def generate_wall_time_outputs():
+    wall_time_comparison_files = (
+            "wall-time-results-qbxfmm.csv",
+            "wall-time-results-gigaqbx.csv",
+    )
 
+    for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
+        with contextlib.ExitStack() as stack:
+            input_files = [
+                    stack.enter_context(my_open(fname))
+                    for fname in wall_time_comparison_files]
+
+            table = generate_wall_time_comparison_table(
+                    input_files=input_files,
+                    order_pairs=order_pairs,
+                    input_labels=(
+                        r"$t_\text{qbxfmm}$", r"$t_\text{giga}$"),
+                    comparison_columns=((1, 0),),
+                    comparison_labels=(
+                        r"$t_\text{giga} / t_\text{qbxfmm}$",),
+                    scheme_name="qbx%d" % order_pairs[0][1])
+            print_table(table)
+
+
+def generate_green_error_outputs():
+    with my_open("green-error-results-gigaqbx.csv") as infile:
+        table_l2, table_linf = (
+                generate_green_error_table(infile, scheme_name="gigaqbx"))
+        print_table(table_l2)
+        print_table(table_linf)
+
+    with my_open("green-error-results-qbxfmm.csv") as infile:
+        table_l2, table_linf = (
+                generate_green_error_table(infile, scheme_name="qbxfmm"))
+        print_table(table_l2)
+        print_table(table_linf)
+
+
+def generate_bvp_outputs():
+    with my_open("bvp-green-error-results-gigaqbx.csv") as infile_green,\
+            my_open("bvp-results.csv") as infile_bvp:
+        table_l2, table_linf = (
+                generate_bvp_error_table(infile_bvp, infile_green))
+        print_table(table_l2)
+        print_table(table_linf)
+
+
+def generate_particle_distributions_outputs():
+    with my_open("particle-distributions.csv") as infile:
+        table = generate_particle_distribution_table(infile)
+        print_table(table)
+
+
+def generate_complexity_outputs():
+    def postproc_func(fig):
+        for ax in fig.get_axes():
+            ax.set_xlim(1e4, 2*1e6)
+            ax.set_ylim(1e5, 2e9)
+
+    summary_labels = tuple(r"$\gamma_{%d}" % n for n in range(5, 66, 10))
+
+    with my_open("complexity-results-gigaqbx-threshold15.csv")\
+            as input_file:
+        generate_complexity_figure(
+                input_file, GIGAQBX_ORDER_PAIRS, use_gigaqbx_fmm=True,
+                summary_labels=summary_labels, postproc_func=postproc_func)
+
+    with my_open("complexity-results-qbxfmm-threshold15.csv")\
+            as input_file:
+        generate_complexity_figure(
+                input_file, QBXFMM_ORDER_PAIRS, use_gigaqbx_fmm=False,
+                summary_labels=summary_labels, postproc_func=postproc_func)
+
+    complexity_comparison_files = (
+            "complexity-results-qbxfmm-threshold15.csv",
+            "complexity-results-gigaqbx-threshold15.csv",
+    )
+
+    complexity_comparison_labelings = (
+            QBXFMMPerfLabeling,
+            GigaQBXPerfLabeling)
+
+    for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
+        with contextlib.ExitStack() as stack:
+            input_files = [
+                    stack.enter_context(open_data_file(fname, newline=""))
+                    for fname in complexity_comparison_files]
+
+            label = "qbx%d-qbxfmm-vs-gigaqbx" % order_pairs[0][1]
+
+            spec = (
+                    Column(r"\#Ops (QBX FMM)", order_pairs[0], 0, "%d"),
+                    Column(r"\#Ops (GIGAQBX)", order_pairs[1], 1, "%d"),
+                    ComparisonColumn("Ratio", 2, 1, "%.2f"))
+
+            table = generate_complexity_comparison_table(
+                    input_files,
+                    complexity_comparison_labelings,
+                    spec,
+                    include_averages=True,
+                    label=label)
+            print_table(table)
+
+    # Green error summaries for complexity experiment
+    with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
+        table = generate_green_error_summary_table(
+                infile, GIGAQBX_ORDER_PAIRS, scheme_name="gigaqbx")
+        print_table(table)
+
+    with my_open("complexity-green-error-results-qbxfmm.csv") as infile:
+        table = generate_green_error_summary_table(
+                infile, QBXFMM_ORDER_PAIRS, scheme_name="qbxfmm")
+        print_table(table)
+
+
+def generate_from_sep_smaller_threshold_outputs():
+    complexity_comparison_files = (
+            "complexity-results-gigaqbx-threshold0.csv",
+            "complexity-results-gigaqbx-threshold15.csv",
+    )
+
+    for order_pair in GIGAQBX_ORDER_PAIRS:
+        with contextlib.ExitStack() as stack:
+            input_files = [
+                    stack.enter_context(open_data_file(fname, newline=""))
+                    for fname in complexity_comparison_files]
+            label = (
+                    "fmm%d-qbx%d-gigaqbx-threshold0-vs-threshold15"
+                    % order_pair)
+            table = generate_complexity_comparison_table(
+                    input_files,
+                    (GigaQBXPerfLabeling,) * 2,
+                    spec=(
+                        Column(r"\#Ops (thresh.=0)", order_pair, 0, "%d"),
+                        Column(r"\#Ops (thresh.=15)", order_pair, 1, "%d"),
+                        ComparisonColumn("Ratio", 2, 1, "%.2f")),
+                    include_averages=True,
+                    label=label)
+            print_table(table)
+
+
+def generate_op_count_comparison_outputs():
+    gigaqbx_complexity_results = (
+            "old-summary-op-counts-gigaqbx.csv",
+            "complexity-results-gigaqbx-threshold15.csv",
+
+    )
+
+    qbxfmm_complexity_results = (
+            "old-summary-op-counts-qbxfmm.csv",
+            "complexity-results-qbxfmm-threshold15.csv",
+    )
+
+    for label, perf_labeling, input_file_names, order_pairs in \
+            zip(
+                ("gigaqbx", "qbxfmm"),
+                (GigaQBXPerfLabeling, QBXFMMPerfLabeling),
+                (gigaqbx_complexity_results, qbxfmm_complexity_results),
+                (GIGAQBX_ORDER_PAIRS, QBXFMM_ORDER_PAIRS)):
+
+        def make_group_label(order_pair):
+            fmm_order, qbx_order = order_pair
+            return fr"$\pqbx={qbx_order}$, $\pfmm={fmm_order}$"
+
+        old = r"\#Ops (Old)"
+        new = r"\#Ops (New)"
+
+        spec = (
+            ColumnGroup(make_group_label(order_pairs[0]), (
+                Column(old, order_pairs[0], 0, "%d"),
+                Column(new, order_pairs[0], 1, "%d"),
+                ComparisonColumn("Ratio", 2, 1, "%.2f"))),
+            ColumnGroup(make_group_label(order_pairs[1]), (
+                Column(old, order_pairs[1], 0, "%d"),
+                Column(new, order_pairs[1], 1, "%d"),
+                ComparisonColumn("Ratio", 5, 4, "%.2f"))))
+
+        with contextlib.ExitStack() as stack:
+            input_files = [
+                    stack.enter_context(open_data_file(fname, newline=""))
+                    for fname in input_file_names]
+
+            table = generate_complexity_comparison_table(
+                    input_files,
+                    (QBXPerfLabelingSummaryOnly, perf_labeling),
+                    spec,
+                    include_averages=False,
+                    label=f"{label}-old-vs-new")
+            print_table(table)
+
+
+def gen_figures_and_tables(experiments):
     # Wall time comparison
     if "wall-time" in experiments:
-        wall_time_comparison_files = (
-                "wall-time-results-qbxfmm.csv",
-                "wall-time-results-gigaqbx.csv",
-        )
-
-        for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
-            with contextlib.ExitStack() as stack:
-                input_files = [
-                        stack.enter_context(my_open(fname))
-                        for fname in wall_time_comparison_files]
-
-                generate_wall_time_comparison_table(
-                        input_files=input_files,
-                        order_pairs=order_pairs,
-                        input_labels=(
-                            r"$t_\text{qbxfmm}$", r"$t_\text{giga}$"),
-                        comparison_columns=((1, 0),),
-                        comparison_labels=(
-                            r"$t_\text{giga} / t_\text{qbxfmm}$",),
-                        scheme_name="qbx%d" % order_pairs[0][1])
+        generate_wall_time_outputs()
 
     # Green error tables
     if "green-error" in experiments:
-        with my_open("green-error-results-gigaqbx.csv") as infile:
-            generate_green_error_table(infile, scheme_name="gigaqbx")
-        with my_open("green-error-results-qbxfmm.csv") as infile:
-            generate_green_error_table(infile, scheme_name="qbxfmm")
+        generate_green_error_outputs()
 
     # BVP error table
     if "bvp" in experiments:
-        with my_open("bvp-green-error-results-gigaqbx.csv") as infile_green,\
-                my_open("bvp-results.csv") as infile_bvp:
-            generate_bvp_error_table(infile_bvp, infile_green)
+        generate_bvp_outputs()
 
     # Particle distributions table
     if "particle-distributions" in experiments:
-        with my_open("particle-distributions.csv") as infile:
-            generate_particle_distribution_table(infile)
+        generate_particle_distributions_outputs()
 
     # Complexity result graphs
     if "complexity" in experiments:
-        def postproc_func(fig):
-            for ax in fig.get_axes():
-                ax.set_xlim(1e4, 2*1e6)
-                ax.set_ylim(1e5, 2e9)
-
-        summary_labels = tuple(r"$\gamma_{%d}" % n for n in range(5, 66, 10))
-
-        with my_open("complexity-results-gigaqbx-threshold15.csv")\
-                as input_file:
-            generate_complexity_figure(
-                    input_file, GIGAQBX_ORDER_PAIRS, use_gigaqbx_fmm=True,
-                    summary_labels=summary_labels, postproc_func=postproc_func)
-
-        with my_open("complexity-results-qbxfmm-threshold15.csv")\
-                as input_file:
-            generate_complexity_figure(
-                    input_file, QBXFMM_ORDER_PAIRS, use_gigaqbx_fmm=False,
-                    summary_labels=summary_labels, postproc_func=postproc_func)
-
-        complexity_comparison_files = (
-                "complexity-results-qbxfmm-threshold15.csv",
-                "complexity-results-gigaqbx-threshold15.csv",
-        )
-
-        complexity_comparison_labelings = (
-                QBXFMMPerfLabeling,
-                GigaQBXPerfLabeling)
-
-        for order_pairs in zip(QBXFMM_ORDER_PAIRS, GIGAQBX_ORDER_PAIRS):
-            with contextlib.ExitStack() as stack:
-                input_files = [
-                        stack.enter_context(open_data_file(fname, newline=""))
-                        for fname in complexity_comparison_files]
-
-                label = "qbx%d-qbxfmm-vs-gigaqbx" % order_pairs[0][1]
-
-                spec = (
-                        Column(r"\#Ops (QBX FMM)", order_pairs[0], 0, "%d"),
-                        Column(r"\#Ops (GIGAQBX)", order_pairs[1], 1, "%d"),
-                        ComparisonColumn("Ratio", 2, 1, "%.2f"))
-
-                generate_complexity_comparison_table(
-                        input_files,
-                        complexity_comparison_labelings,
-                        spec,
-                        include_averages=True,
-                        label=label)
-
-        # Green error summaries for complexity experiment
-        with my_open("complexity-green-error-results-gigaqbx.csv") as infile:
-            generate_green_error_summary_table(
-                    infile, GIGAQBX_ORDER_PAIRS, scheme_name="gigaqbx")
-
-        with my_open("complexity-green-error-results-qbxfmm.csv") as infile:
-            generate_green_error_summary_table(
-                    infile, QBXFMM_ORDER_PAIRS, scheme_name="qbxfmm")
+        generate_complexity_outputs()
 
     # Effect of threshold on operation counts
     if "from-sep-smaller-threshold" in experiments:
-        complexity_comparison_files = (
-                "complexity-results-gigaqbx-threshold0.csv",
-                "complexity-results-gigaqbx-threshold15.csv",
-        )
-
-        for order_pair in GIGAQBX_ORDER_PAIRS:
-            with contextlib.ExitStack() as stack:
-                input_files = [
-                        stack.enter_context(open_data_file(fname, newline=""))
-                        for fname in complexity_comparison_files]
-                label = (
-                        "fmm%d-qbx%d-gigaqbx-threshold0-vs-threshold15"
-                        % order_pair)
-                generate_complexity_comparison_table(
-                        input_files,
-                        (GigaQBXPerfLabeling,) * 2,
-                        spec=(
-                            Column(r"\#Ops (thresh.=0)", order_pair, 0, "%d"),
-                            Column(r"\#Ops (thresh.=15)", order_pair, 1, "%d"),
-                            ComparisonColumn("Ratio", 2, 1, "%.2f")),
-                        include_averages=True,
-                        label=label)
+        generate_from_sep_smaller_threshold_outputs()
 
     if "op-count-comparison" in experiments:
-        gigaqbx_complexity_results = (
-                "old-summary-op-counts-gigaqbx.csv",
-                "complexity-results-gigaqbx-threshold15.csv",
-
-        )
-
-        qbxfmm_complexity_results = (
-                "old-summary-op-counts-qbxfmm.csv",
-                "complexity-results-qbxfmm-threshold15.csv",
-        )
-
-        for label, perf_labeling, input_file_names, order_pairs in \
-                zip(
-                    ("gigaqbx", "qbxfmm"),
-                    (GigaQBXPerfLabeling, QBXFMMPerfLabeling),
-                    (gigaqbx_complexity_results, qbxfmm_complexity_results),
-                    (GIGAQBX_ORDER_PAIRS, QBXFMM_ORDER_PAIRS)):
-
-            def make_group_label(order_pair):
-                fmm_order, qbx_order = order_pair
-                return fr"$\pqbx={qbx_order}$, $\pfmm={fmm_order}$"
-
-            old = r"\#Ops (Old)"
-            new = r"\#Ops (New)"
-
-            spec = (
-                ColumnGroup(make_group_label(order_pairs[0]), (
-                    Column(old, order_pairs[0], 0, "%d"),
-                    Column(new, order_pairs[0], 1, "%d"),
-                    ComparisonColumn("Ratio", 2, 1, "%.2f"))),
-                ColumnGroup(make_group_label(order_pairs[1]), (
-                    Column(old, order_pairs[1], 0, "%d"),
-                    Column(new, order_pairs[1], 1, "%d"),
-                    ComparisonColumn("Ratio", 5, 4, "%.2f"))))
-
-            with contextlib.ExitStack() as stack:
-                input_files = [
-                        stack.enter_context(open_data_file(fname, newline=""))
-                        for fname in input_file_names]
-
-                generate_complexity_comparison_table(
-                        input_files,
-                        (QBXPerfLabelingSummaryOnly, perf_labeling),
-                        spec,
-                        include_averages=False,
-                        label=f"{label}-old-vs-new")
+        generate_op_count_comparison_outputs()
 
 
 def main():
