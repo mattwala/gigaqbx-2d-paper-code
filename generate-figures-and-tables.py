@@ -6,6 +6,7 @@ import contextlib
 import csv
 import functools
 import logging
+import re
 import os
 
 import numpy as np
@@ -893,7 +894,8 @@ def generate_wall_time_comparison_table(
 # {{{ data comparison table
 
 def generate_data_comparison_table(
-        old_table, new_table, cols_to_compare, comparison_func, output_fname):
+        old_table, new_table, cols_to_compare, comparison_func,
+        formatter, output_fname, column_formats=None):
 
     rows = []
 
@@ -902,21 +904,41 @@ def generate_data_comparison_table(
 
         row = []
         corrected_row = []
-        rows.append(row)
-        rows.append(corrected_row)
 
         for icol, (old_item, new_item) in enumerate(zip(old_row, new_row)):
             if icol not in cols_to_compare:
                 assert comparison_func(icol, old_item, new_item)
-                row.append(old_item)
+                row.append(formatter(icol, old_item))
                 corrected_row.append("")
+                continue
 
             if comparison_func(icol, old_item, new_item):
-                row.append(old_item)
+                row.append(formatter(icol, old_item))
                 corrected_row.append("")
             else:
-                row.append(r"\uncorrected{%s}" % old_item)
-                corrected_row.append(r"\corrected{%s}" % new_item)
+                row.append(
+                        r"\uncorrected{%s}" % formatter(icol, old_item))
+                corrected_row.append(
+                        r"\corrected{%s}" % formatter(icol, new_item))
+
+        if len(rows) and not row[0].startswith(r"\cmid"):
+            row[0] = r"\hdashline{}" + row[0]
+
+        rows.append(row)
+        if not all(item == "" for item in corrected_row):
+            rows.append(corrected_row)
+
+    assert old_table.headers == new_table.headers
+
+    if column_formats is None:
+        assert old_table.column_formats == new_table.column_formats
+        column_formats = old_table.column_formats
+
+    return OutputTable(
+            rows,
+            old_table.headers,
+            column_formats,
+            output_fname)
 
 # }}}
 
@@ -974,6 +996,112 @@ def generate_green_error_outputs():
                 generate_green_error_table(infile, scheme_name="qbxfmm"))
         print_table(table_l2)
         print_table(table_linf)
+
+
+def generate_green_error_comparison_outputs():
+    with my_open("old-green-error-results-gigaqbx.csv") as infile:
+        _, old_table_linf = (
+                generate_green_error_table(infile, scheme_name="gigaqbx"))
+
+    with my_open("green-error-results-gigaqbx.csv") as infile:
+        _, new_table_linf = (
+                generate_green_error_table(infile, scheme_name="gigaqbx"))
+
+    def cmp(col, old_val, new_val):
+        if col in (0, 1):
+            return old_val == new_val
+        old_val = float(old_val.strip(r"\converged{}"))
+        new_val = float(new_val.strip(r"\converged{}"))
+        return abs(old_val - new_val) < 0.01 * old_val
+
+    def formatter(col, val):
+        if col == 1:
+            return val
+        spec = "%.0e" if col == 0 else "%.2e"
+        val = val.strip(r"\converged{}")
+        if float(val) == 0:
+            return "0"
+        val = spec % float(val)
+        eindex = val.index("e")
+        base = val[:eindex]
+        exp = int(val[eindex+1:])
+        result = fr"{base} \times 10^{{{exp}}}"
+        result = f"${result}$"
+        return result
+
+    table = generate_data_comparison_table(
+            old_table_linf, new_table_linf, (2, 3, 4, 5),
+            cmp, formatter,
+            "green-error-results-old-vs-new-gigaqbx.tex",
+            column_formats="c" * 6)
+
+    print_table(table)
+
+
+def generate_particle_distributions_comparison_outputs():
+    with my_open("particle-distributions.csv") as infile:
+        new_table = generate_particle_distribution_table(infile)
+
+    with my_open("old-particle-distributions.csv") as infile:
+        old_table = generate_particle_distribution_table(infile)
+
+    def cmp(col, old_val, new_val):
+        return old_val == new_val
+
+    def formatter(col, val):
+        return val
+
+    table = generate_data_comparison_table(
+            old_table, new_table, (2, 3, 4, 5, 6, 7),
+            cmp, formatter,
+            "particle-distributions-results-old-vs-new.tex")
+
+    print_table(table)
+
+
+def generate_bvp_comparison_outputs():
+    with my_open("bvp-green-error-results-gigaqbx.csv") as infile_green,\
+            my_open("bvp-results.csv") as infile_bvp:
+        _, new_table_linf = (
+                generate_bvp_error_table(infile_bvp, infile_green))
+
+    with my_open("old-bvp-green-error-results-gigaqbx.csv") as infile_green,\
+            my_open("old-bvp-results.csv") as infile_bvp:
+        _, old_table_linf = (
+                generate_bvp_error_table(infile_bvp, infile_green))
+
+    def cmp(col, old_val, new_val):
+        if col in (0, 1) or "" in (old_val, new_val):
+            return old_val == new_val
+        old_val = float(old_val.strip(r"\converged{}"))
+        new_val = float(new_val.strip(r"\converged{}"))
+        return abs(old_val - new_val) < 0.01 * old_val
+
+    def formatter(col, val):
+        if not val:
+            return val
+        if col in (1, 3, 5, 7, 9):
+            return val
+        has_midrule = val.startswith(r"\cmidrule")
+        spec = "%.0e" if col == 0 else "%.2e"
+        val = re.findall(r"[0-9]+\.[0-9]*e[+-][0-9]+", val)[0]
+        val = spec % float(val)
+        eindex = val.index("e")
+        base = val[:eindex]
+        exp = int(val[eindex+1:])
+        result = fr"{base} \times 10^{{{exp}}}"
+        result = f"${result}$"
+        if has_midrule:
+            result = r"\cmidrule{1-10}" + result
+        return result
+
+    table = generate_data_comparison_table(
+            old_table_linf, new_table_linf, list(range(2, 10)),
+            cmp, formatter,
+            "bvp-results-old-vs-new-gigaqbx.tex",
+            column_formats="c" * 10)
+
+    print_table(table)
 
 
 def generate_bvp_outputs():
@@ -1138,13 +1266,23 @@ def gen_figures_and_tables(experiments):
     if "green-error" in experiments:
         generate_green_error_outputs()
 
+    if "green-error-comparison" in experiments:
+        generate_green_error_comparison_outputs()
+
     # BVP error table
     if "bvp" in experiments:
         generate_bvp_outputs()
 
+    if "bvp-comparison" in experiments:
+        generate_bvp_comparison_outputs()
+
     # Particle distributions table
     if "particle-distributions" in experiments:
         generate_particle_distributions_outputs()
+
+    # Green error tables
+    if "particle-distributions-comparison" in experiments:
+        generate_particle_distributions_comparison_outputs()
 
     # Complexity result graphs
     if "complexity" in experiments:
