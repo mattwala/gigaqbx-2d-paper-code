@@ -1,6 +1,6 @@
 __pycache__/
 out/
 src/
-latexout/
+summary/
 .miniconda2/
 Miniconda2-*-x86_64.sh
