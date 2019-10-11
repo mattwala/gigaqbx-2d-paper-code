@@ -531,7 +531,7 @@ def _bvp_experiment_body(fmm_and_qbx_order_pair):
 # {{{ particle distributions
 
 PARTICLE_DISTRIBUTION_FIELDS = (
-        ("n_arms", "nsources", "ncenters", "avg")
+        ("n_arms", "nsources", "avg")
         + tuple(
             "percentile_%d" % pct
             for pct in PARTICLE_DISTRIBUTION_EXPERIMENT_PERCENTILES))
@@ -546,13 +546,12 @@ def run_particle_distributions_experiment():
 
     for n_arms in PARTICLE_DISTRIBUTION_EXPERIMENT_N_ARMS_LIST:
         lpot_source = get_geometry(cl_ctx, n_arms, use_gigaqbx_fmm=True)
-        neighborhood_sizes, nsources, ncenters = (
+        neighborhood_sizes, nsources, _ = (
                 get_qbx_center_neighborhood_sizes(lpot_source, 8 / TCF))
 
         row = dict(
                 n_arms=n_arms,
                 nsources=nsources,
-                ncenters=ncenters,
                 avg=FLOAT_OUTPUT_FMT % np.mean(neighborhood_sizes))
 
         percentiles = np.percentile(
