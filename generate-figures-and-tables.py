@@ -110,8 +110,8 @@ def converged_fmt(item, converged):
 
 
 def is_converged(err, ref):
-    # Converged if err is within 1% of ref or lower.
-    return err <= ref * 1.01
+    # Converged if err is within 0.1% of ref or lower.
+    return err <= ref * 1.001
 
 # }}}
 
@@ -907,19 +907,22 @@ def generate_data_comparison_table(
 
         for icol, (old_item, new_item) in enumerate(zip(old_row, new_row)):
             if icol not in cols_to_compare:
-                assert comparison_func(icol, old_item, new_item)
+                assert 0 == comparison_func(icol, old_item, new_item)
                 row.append(formatter(icol, old_item))
                 corrected_row.append("")
                 continue
 
-            if comparison_func(icol, old_item, new_item):
+            result = comparison_func(icol, old_item, new_item)
+
+            if 0 == result:
                 row.append(formatter(icol, old_item))
                 corrected_row.append("")
             else:
+                label = "correctedHigher" if result > 0 else "correctedLower"
                 row.append(
                         r"\uncorrected{%s}" % formatter(icol, old_item))
                 corrected_row.append(
-                        r"\corrected{%s}" % formatter(icol, new_item))
+                        r"\%s{%s}" % (label, formatter(icol, new_item)))
 
         if len(rows) and not row[0].startswith(r"\cmid"):
             row[0] = r"\hdashline{}" + row[0]
@@ -998,6 +1001,15 @@ def generate_green_error_outputs():
         print_table(table_linf)
 
 
+def compare_vals(a, b):
+    if a < b:
+        return -1
+    elif a == b:
+        return 0
+    else:
+        return 1
+
+
 def generate_green_error_comparison_outputs():
     with my_open("old-green-error-results-gigaqbx.csv") as infile:
         _, old_table_linf = (
@@ -1009,10 +1021,13 @@ def generate_green_error_comparison_outputs():
 
     def cmp(col, old_val, new_val):
         if col in (0, 1):
-            return old_val == new_val
+            return compare_vals(old_val, new_val)
         old_val = float(old_val.strip(r"\converged{}"))
         new_val = float(new_val.strip(r"\converged{}"))
-        return abs(old_val - new_val) < 0.01 * old_val
+        if abs(old_val - new_val) < 0.01 * old_val:
+            return 0
+        else:
+            return -1 if old_val < new_val else 1
 
     def formatter(col, val):
         if col == 1:
@@ -1046,7 +1061,7 @@ def generate_particle_distributions_comparison_outputs():
         old_table = generate_particle_distribution_table(infile)
 
     def cmp(col, old_val, new_val):
-        return old_val == new_val
+        return compare_vals(float(old_val), float(new_val))
 
     def formatter(col, val):
         return val
@@ -1072,10 +1087,12 @@ def generate_bvp_comparison_outputs():
 
     def cmp(col, old_val, new_val):
         if col in (0, 1) or "" in (old_val, new_val):
-            return old_val == new_val
+            return compare_vals(old_val, new_val)
         old_val = float(old_val.strip(r"\converged{}"))
         new_val = float(new_val.strip(r"\converged{}"))
-        return abs(old_val - new_val) < 0.01 * old_val
+        if abs(old_val - new_val) < 0.01 * old_val:
+            return 0
+        return -1 if old_val < new_val else 1
 
     def formatter(col, val):
         if not val:
