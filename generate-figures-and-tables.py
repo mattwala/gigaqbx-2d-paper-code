@@ -918,7 +918,7 @@ def generate_data_comparison_table(
                 row.append(formatter(icol, old_item))
                 corrected_row.append("")
             else:
-                label = "correctedHigher" if result > 0 else "correctedLower"
+                label = "correctedHigher" if result < 0 else "correctedLower"
                 row.append(
                         r"\uncorrected{%s}" % formatter(icol, old_item))
                 corrected_row.append(
