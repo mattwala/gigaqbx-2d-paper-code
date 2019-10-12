@@ -1,8 +1,8 @@
-git+https://gitlab.tiker.net/mattwala/boxtree.git@969bb816f189be0cdd309ded5a827577503f6f90#egg=boxtree
-git+https://github.com/inducer/codepy.git@c233901256147803ae92c3a108bf8581db1caa4d#egg=codepy
-git+https://github.com/inducer/genpy.git@05fe376b69abbb902eea88e6f268733305b6e12a#egg=genpy
-git+https://github.com/inducer/gmsh_interop.git@a6d4f04134ad128988d9eee296278db448f52d48#egg=gmsh_interop
-git+https://gitlab.tiker.net/inducer/loopy.git@c81f687f5c7ae9b8a92cf3f5d81b6b5f530aa176#egg=loo.py
-git+https://github.com/inducer/meshmode.git@bfd441ebdd5011450962f9857e95a31700f23df0#egg=meshmode
-git+https://gitlab.tiker.net/mattwala/sumpy.git@a90512815de8bce03816bb22659d752cf731704a#egg=sumpy
--e git+https://gitlab.tiker.net/mattwala/pytential.git@db5aae0f31b4614f4b73552b52a57b56a8e2064d#egg=pytential
+-e git+https://github.com/mattwala/boxtree.git@969bb816f189be0cdd309ded5a827577503f6f90#egg=boxtree
+-e git+https://github.com/inducer/codepy.git@c233901256147803ae92c3a108bf8581db1caa4d#egg=codepy
+-e git+https://github.com/inducer/genpy.git@05fe376b69abbb902eea88e6f268733305b6e12a#egg=genpy
+-e git+https://github.com/inducer/gmsh_interop.git@a6d4f04134ad128988d9eee296278db448f52d48#egg=gmsh_interop
+-e git+https://github.com/inducer/loopy.git@c81f687f5c7ae9b8a92cf3f5d81b6b5f530aa176#egg=loo.py
+-e git+https://github.com/inducer/meshmode.git@bfd441ebdd5011450962f9857e95a31700f23df0#egg=meshmode
+-e git+https://github.com/inducer/sumpy.git@a90512815de8bce03816bb22659d752cf731704a#egg=sumpy
+-e git+https://github.com/mattwala/pytential.git@db5aae0f31b4614f4b73552b52a57b56a8e2064d#egg=pytential
