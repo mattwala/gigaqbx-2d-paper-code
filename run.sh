@@ -41,3 +41,4 @@ py.test --disable-warnings utils.py
 OMP_NUM_THREADS=1 ./generate-data.py -x wall-time
 nice -n 1 ./generate-data.py --all --except wall-time
 ./generate-figures-and-tables.py --all
+make -f makefile.summary
