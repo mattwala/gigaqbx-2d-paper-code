@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+# This script installs software and sets up the Conda environment.
+
 # Find platform
 if [ "$(uname)" = Darwin ] && [ "$(uname -m)" = x86_64 ]
 then

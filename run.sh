@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+# This script re-runs all experiments.
+
 source install.sh
 
 # Tell PyOpenCL to use POCL

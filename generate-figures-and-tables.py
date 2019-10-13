@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""This script postprocesses experimental data to generate figures."""
 
 import argparse
 import collections

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Utilites."""
+
 import numpy as np
 import numpy.linalg as la
 import pyopencl as cl

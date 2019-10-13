@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""This script generates experimental data."""
 
 import argparse
 import csv
