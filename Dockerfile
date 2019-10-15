@@ -21,7 +21,7 @@ RUN mkdir /home/inteq/gigaqbx-2d-results
 WORKDIR /home/inteq/gigaqbx-2d-results
 COPY --chown=inteq . .
 RUN ./install.sh \
-    && .miniconda2/bin/conda clean --all --yes
+    && .miniconda3/bin/conda clean --all --yes
 
 # Install extra LaTeX bits
 RUN tlmgr init-usertree \

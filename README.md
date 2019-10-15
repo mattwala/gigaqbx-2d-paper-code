@@ -20,7 +20,7 @@ For producing figures and outputs, you will also need LaTeX and the
 Before running, activate the Conda environment and instruct PyOpenCL to use
 POCL, as follows:
 ```
-source .miniconda2/bin/activate inteq
+source .miniconda3/bin/activate inteq
 export PYOPENCL_TEST=portable
 ```
 
