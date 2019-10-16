@@ -2,5 +2,5 @@ __pycache__/
 out/
 src/
 summary/
-.miniconda2/
-Miniconda2-*-x86_64.sh
+.miniconda3/
+Miniconda3-*-x86_64.sh
