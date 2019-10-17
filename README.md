@@ -13,7 +13,7 @@ The code that is included reproduces the following parts of the paper:
 
 ## Running Everything
 
-Install the [Docker image](#docker-image), and from the repository directory in
+Install the [Docker image](#docker-image), and from the code directory in
 a shell running in a container, type:
 ```
 ./run.sh
@@ -27,19 +27,27 @@ It's also possible to have more selective control over what gets run. See
 
 ## Installation Hints
 
+This code uses a special branch of
+[Pytential](https://github.com/inducer/pytential), available
+[here](https://github.com/mattwala/pytential/tree/fix-cost-model-for-2d-paper-code-v2).
+Two options are available for obtaining the needed revisions of Pytential and
+its dependencies.
+
 ### Docker Image
 
-A [Docker image](http://dx.doi.org/10.5281/zenodo.3483367) preinstalled with
-necessary software and the code in this repository is available.
+The simplest way to install is to use the
+[Docker image](http://dx.doi.org/10.5281/zenodo.3483367). The code
+and software are installed in the image directory
+`/home/inteq/gigaqbx-2d-results`.
 
 ### Manual Installation
 
-If you don't want to use the Docker image, you can install the software manually
-using the command:
+If you don't want to use the Docker image, you can install necessary software
+manually using the command:
 ```
 ./install.sh
 ```
-This script downloads and installs everything in an isolated environment in this
+This script downloads and installs software in an isolated environment in this
 directory using Conda and pip.
 
 For producing figures and outputs, you also need LaTeX and the
