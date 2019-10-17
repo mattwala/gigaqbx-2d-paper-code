@@ -13,8 +13,8 @@ The code that is included reproduces the following parts of the paper:
 
 ## Running Everything
 
-Install the [Docker image](#docker-image), and from the code directory in
-a shell running in a container, type:
+Install the [Docker image](#docker-image), and from a shell running in a
+container, go to the code directory and type:
 ```
 ./run.sh
 ```
