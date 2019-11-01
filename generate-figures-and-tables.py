@@ -105,6 +105,11 @@ def fmt(val):
     return f"{val:e}"
 
 
+def num_fmt(val):
+    """Format a table cell using the \num{} macro from siunitx."""
+    return fr"\num{{{val}}}"
+
+
 def converged_fmt(item, converged):
     if not converged:
         return item
@@ -787,7 +792,11 @@ def generate_complexity_comparison_table(
         elif isinstance(item, str):
             return item
         else:
-            return formats[index] % item
+            format = formats[index]
+            if callable(format):
+                return format(item)
+            else:
+                return format % item
 
     for row in rows:
         row[:] = map(stringify, enumerate(row))
@@ -1176,8 +1185,8 @@ def generate_complexity_outputs():
             label = "qbx%d-qbxfmm-vs-gigaqbx" % order_pairs[0][1]
 
             spec = (
-                    Column(r"\#Ops (QBX FMM)", order_pairs[0], 0, "%d"),
-                    Column(r"\#Ops (GIGAQBX)", order_pairs[1], 1, "%d"),
+                    Column(r"\#Ops (QBX FMM)", order_pairs[0], 0, num_fmt),
+                    Column(r"\#Ops (GIGAQBX)", order_pairs[1], 1, num_fmt),
                     ComparisonColumn("Ratio", 2, 1, "%.2f"))
 
             table = generate_complexity_comparison_table(
@@ -1218,8 +1227,8 @@ def generate_from_sep_smaller_threshold_outputs():
                     input_files,
                     (GigaQBXPerfLabeling,) * 2,
                     spec=(
-                        Column(r"\#Ops (thresh.=0)", order_pair, 0, "%d"),
-                        Column(r"\#Ops (thresh.=15)", order_pair, 1, "%d"),
+                        Column(r"\#Ops (thresh.=0)", order_pair, 0, num_fmt),
+                        Column(r"\#Ops (thresh.=15)", order_pair, 1, num_fmt),
                         ComparisonColumn("Ratio", 2, 1, "%.2f")),
                     include_averages=True,
                     label=label)
@@ -1254,12 +1263,12 @@ def generate_op_count_comparison_outputs():
 
         spec = (
             ColumnGroup(make_group_label(order_pairs[0]), (
-                Column(old, order_pairs[0], 0, "%d"),
-                Column(new, order_pairs[0], 1, "%d"),
+                Column(old, order_pairs[0], 0, num_fmt),
+                Column(new, order_pairs[0], 1, num_fmt),
                 ComparisonColumn("Ratio", 2, 1, "%.2f"))),
             ColumnGroup(make_group_label(order_pairs[1]), (
-                Column(old, order_pairs[1], 0, "%d"),
-                Column(new, order_pairs[1], 1, "%d"),
+                Column(old, order_pairs[1], 0, num_fmt),
+                Column(new, order_pairs[1], 1, num_fmt),
                 ComparisonColumn("Ratio", 5, 4, "%.2f"))))
 
         with contextlib.ExitStack() as stack:
