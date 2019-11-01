@@ -10,6 +10,7 @@ import re
 import os
 
 import numpy as np
+import utils
 
 # Whether to generate a PDF file. If False, will generate pgf.
 GENERATE_PDF = True

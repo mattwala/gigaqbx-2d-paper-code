@@ -6,12 +6,12 @@ import collections
 import logging
 import multiprocessing
 import os
-import utils
 
 import numpy as np
 import numpy.linalg as la
 import pyopencl as cl
 import pyopencl.clmath  # noqa
+import utils
 
 from functools import partial
 from itertools import product
