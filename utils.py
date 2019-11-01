@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Utilites."""
 
+import argparse
+import fnmatch
 import numpy as np
 import numpy.linalg as la
 import pyopencl as cl
@@ -241,6 +243,67 @@ def test_get_qbx_center_neighborhood_sizes(ctx_factory):
     assert (result_direct[0] == result_aq[0]).all()
     assert result_direct[1] == result_aq[1]
     assert result_direct[2] == result_aq[2]
+
+# }}}
+
+
+# {{{ parse args
+
+def parse_args(description, experiments):
+    names = ["  - '%s'" % name for name in experiments]
+    epilog = "\n".join(["experiment names:"] + names)
+
+    parser = argparse.ArgumentParser(
+            description=description,
+            epilog=epilog,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    parser.add_argument(
+            "-x",
+            metavar="experiment-name",
+            action="append",
+            dest="experiments",
+            default=[],
+            help="Adds an experiment to the list to be run "
+                 "(accepts wildcards) (may be given multiple times)")
+
+    parser.add_argument(
+            "--all",
+            action="store_true",
+            dest="run_all",
+            help="Runs all experiments")
+
+    parser.add_argument(
+            "--except",
+            action="append",
+            metavar="experiment-name",
+            dest="run_except",
+            default=[],
+            help="Removes an experiment from the list to be run "
+                 "(accepts wildcards) (may be given multiple times)")
+
+    parse_result = parser.parse_args()
+
+    result = set()
+
+    if parse_result.run_all:
+        result = set(experiments)
+
+    for experiment in experiments:
+        for pat in parse_result.experiments:
+            if fnmatch.fnmatch(experiment, pat):
+                result.add(experiment)
+                continue
+
+    to_discard = set()
+    for experiment in experiments:
+        for pat in parse_result.run_except:
+            if fnmatch.fnmatch(experiment, pat):
+                to_discard.add(experiment)
+                continue
+    result -= to_discard
+
+    return result
 
 # }}}
 
