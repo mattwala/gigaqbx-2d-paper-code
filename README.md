@@ -36,7 +36,7 @@ its dependencies.
 ### Docker Image
 
 The simplest way to install is to use the
-[Docker image](http://dx.doi.org/10.5281/zenodo.3483367). The code
+[Docker image](https://doi.org/10.5281/zenodo.3483367). The code
 and software are installed in the image directory
 `/home/inteq/gigaqbx-2d-results`.
 
