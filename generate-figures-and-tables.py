@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """This script postprocesses experimental data to generate figures."""
 
-import argparse
 import collections
 import contextlib
 import csv
@@ -11,6 +10,7 @@ import re
 import os
 
 import numpy as np
+import utils
 
 # Whether to generate a PDF file. If False, will generate pgf.
 GENERATE_PDF = True
@@ -957,19 +957,6 @@ def generate_data_comparison_table(
 # }}}
 
 
-EXPERIMENTS = (
-        "wall-time",
-        "green-error",
-        "bvp",
-        "particle-distributions",
-        "green-error-comparison",
-        "bvp-comparison",
-        "particle-distributions-comparison",
-        "complexity",
-        "from-sep-smaller-threshold",
-        "op-count-comparison")
-
-
 GIGAQBX_ORDER_PAIRS = ((10, 3), (15, 7))
 QBXFMM_ORDER_PAIRS = ((15, 3), (30, 7))
 
@@ -1285,6 +1272,19 @@ def generate_op_count_comparison_outputs():
             print_table(table)
 
 
+EXPERIMENTS = (
+        "wall-time",
+        "green-error",
+        "bvp",
+        "particle-distributions",
+        "green-error-comparison",
+        "bvp-comparison",
+        "particle-distributions-comparison",
+        "complexity",
+        "from-sep-smaller-threshold",
+        "op-count-comparison")
+
+
 def gen_figures_and_tables(experiments):
     # Wall time comparison
     if "wall-time" in experiments:
@@ -1325,49 +1325,9 @@ def gen_figures_and_tables(experiments):
 
 
 def main():
-    names = ["'%s'" % name for name in EXPERIMENTS]
-    names[-1] = "and " + names[-1]
-
     description = (
-            "This script postprocesses results for one or more experiments. "
-            " The names of the experiments are: " + ", ".join(names)
-            + ".")
-
-    parser = argparse.ArgumentParser(description=description)
-
-    parser.add_argument(
-            "-x",
-            metavar="experiment-name",
-            action="append",
-            dest="experiments",
-            default=[],
-            help="Postprocess results for an experiment "
-                 "(may be specified multiple times)")
-
-    parser.add_argument(
-            "--all",
-            action="store_true",
-            dest="run_all",
-            help="Postprocess results for all available experiments")
-
-    parser.add_argument(
-            "--except",
-            action="append",
-            metavar="experiment-name",
-            dest="run_except",
-            default=[],
-            help="Do not postprocess results for an experiment "
-                 "(may be specified multiple times)")
-
-    result = parser.parse_args()
-
-    experiments = set()
-
-    if result.run_all:
-        experiments = set(EXPERIMENTS)
-    experiments |= set(result.experiments)
-    experiments -= set(result.run_except)
-
+            "This script postprocesses results for one or more experiments.")
+    experiments = utils.parse_args(description, EXPERIMENTS)
     gen_figures_and_tables(experiments)
 
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """This script generates experimental data."""
 
-import argparse
 import csv
 import collections
 import logging
@@ -12,6 +11,7 @@ import numpy as np
 import numpy.linalg as la
 import pyopencl as cl
 import pyopencl.clmath  # noqa
+import utils
 
 from functools import partial
 from itertools import product
@@ -541,14 +541,12 @@ PARTICLE_DISTRIBUTION_FIELDS = (
 def run_particle_distributions_experiment():
     cl_ctx = cl.create_some_context(interactive=False)
 
-    from utils import get_qbx_center_neighborhood_sizes
-
     rows = []
 
     for n_arms in PARTICLE_DISTRIBUTION_EXPERIMENT_N_ARMS_LIST:
         lpot_source = get_geometry(cl_ctx, n_arms, use_gigaqbx_fmm=True)
         neighborhood_sizes, nsources, _ = (
-                get_qbx_center_neighborhood_sizes(lpot_source, 8 / TCF))
+                utils.get_qbx_center_neighborhood_sizes(lpot_source, 8 / TCF))
 
         row = dict(
                 n_arms=n_arms,
@@ -924,47 +922,8 @@ def run_experiments(experiments):
 
 
 def main():
-    names = ["'%s'" % name for name in EXPERIMENTS]
-    names[-1] = "and " + names[-1]
-
-    description = (
-            "This script collects data from one or more experiments. "
-            " The names of the experiments are: " + ", ".join(names)
-            + ".")
-
-    parser = argparse.ArgumentParser(description=description)
-
-    parser.add_argument(
-            "-x",
-            metavar="experiment-name",
-            action="append",
-            dest="experiments",
-            default=[],
-            help="Run an experiment (may be specified multiple times)")
-
-    parser.add_argument(
-            "--all",
-            action="store_true",
-            dest="run_all",
-            help="Run all available experiments")
-
-    parser.add_argument(
-            "--except",
-            action="append",
-            metavar="experiment-name",
-            dest="run_except",
-            default=[],
-            help="Do not run an experiment (may be specified multiple times)")
-
-    result = parser.parse_args()
-
-    experiments = set()
-
-    if result.run_all:
-        experiments = set(EXPERIMENTS)
-    experiments |= set(result.experiments)
-    experiments -= set(result.run_except)
-
+    description = "This script collects data from one or more experiments."
+    experiments = utils.parse_args(description, EXPERIMENTS)
     run_experiments(experiments)
 
 
