@@ -1,6 +1,6 @@
 # Numerical experiments: A fast algorithm with error bounds for Quadrature by Expansion
 
-This repository contains the code for numerical experiments in the paper 'A fast
+This repository contains the code for (corrected) numerical experiments in the paper 'A fast
 algorithm with error bounds for Quadrature by Expansion,' available at
 [doi:10.1016/j.jcp.2018.05.006](https://doi.org/10.1016/j.jcp.2018.05.006) or on
 [arXiv](https://arxiv.org/abs/1801.04070).
