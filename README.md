@@ -1,5 +1,7 @@
 # Numerical experiments: A fast algorithm with error bounds for Quadrature by Expansion
 
+[![DOI](https://zenodo.org/badge/214558364.svg)](https://zenodo.org/badge/latestdoi/214558364)
+
 This repository contains the code for (corrected) numerical experiments in the paper 'A fast
 algorithm with error bounds for Quadrature by Expansion,' available at
 [doi:10.1016/j.jcp.2018.05.006](https://doi.org/10.1016/j.jcp.2018.05.006) or on
