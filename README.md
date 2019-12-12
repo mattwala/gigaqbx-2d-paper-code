@@ -125,6 +125,7 @@ generated:
 
 ## Citations
 
+To cite the paper:
 ```
 @article{gigaqbx2d,
   title = "A fast algorithm with error bounds for {Quadrature} by {Expansion}",
@@ -134,5 +135,32 @@ generated:
   year = "2018",
   doi = "10.1016/j.jcp.2018.05.006",
   author = "Matt Wala and Andreas Klöckner",
+}
+```
+
+To cite the repository and/or Docker image:
+```
+@software{gigaqbx2d_repo,
+  author       = {Matt Wala and
+                  Andreas Klöckner},
+  title        = {mattwala/gigaqbx-2d-paper-code: Initial release},
+  month        = nov,
+  year         = 2019,
+  publisher    = {Zenodo},
+  version      = {1.0.0},
+  doi          = {10.5281/zenodo.3530946},
+  url          = {https://doi.org/10.5281/zenodo.3530946}
+}
+
+@software{gigaqbx2d_docker,
+  author       = {Wala, Matt},
+  title        = {{Docker image: A fast algorithm with error bounds 
+                   for Quadrature by Expansion}},
+  month        = nov,
+  year         = 2019,
+  publisher    = {Zenodo},
+  version      = {1.0.0},
+  doi          = {10.5281/zenodo.3483367},
+  url          = {https://doi.org/10.5281/zenodo.3483367}
 }
 ```
